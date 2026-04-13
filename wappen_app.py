@@ -27,6 +27,9 @@ if "setup_done" not in st.session_state:
         "current_item": None,
         "show_solution": False,
         "user_guess": "",
+        "q_answered": False,
+        "q_feedback": None,
+        "quiz_active": False,
         "quiz_stats": {"correct": 0, "wrong": 0, "total": 0, "wrong_list": []},
         "quiz_queue": [],
         "setup_done": True
@@ -42,7 +45,10 @@ mode = st.sidebar.radio("Modus wählen", ["Lernen (Anki + Tippen)", "Quiz (Stren
 
 def next_question(kanton_filter=None):
     st.session_state.show_solution = False
+    st.session_state.q_answered = False
+    st.session_state.q_feedback = None
     st.session_state.user_guess = ""
+    
     if mode == "Lernen (Anki + Tippen)":
         pool = df[df['kanton'] == kanton_filter] if kanton_filter else df
         if not pool.empty:
@@ -52,9 +58,11 @@ def next_question(kanton_filter=None):
             st.session_state.current_item = st.session_state.quiz_queue.pop(0)
         else:
             st.session_state.current_item = None
+            st.session_state.quiz_active = False
 
 # --- STEUERUNG ---
 if mode == "Lernen (Anki + Tippen)":
+    st.session_state.quiz_active = False # Quiz zurücksetzen wenn Modus gewechselt wird
     kantone = sorted(df['kanton'].unique()) if not df.empty else []
     k_wahl = st.sidebar.selectbox("Kanton wählen", kantone if kantone else ["Keine Daten"])
     if st.session_state.current_item is None:
@@ -67,80 +75,87 @@ else:
         if not pool.empty:
             st.session_state.quiz_queue = pool.sample(frac=1).to_dict('records')
             st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
+            st.session_state.quiz_active = True
             next_question()
             st.rerun()
 
 # --- HAUPTBEREICH ---
-if st.session_state.current_item:
+if mode == "Lernen (Anki + Tippen)" and st.session_state.current_item:
     item = st.session_state.current_item
     name_richtig = str(item.get('gemeinde', ''))
     
-    # --- LERNMODUS (ANKI + TIPPEN) ---
-    if mode == "Lernen (Anki + Tippen)":
-        st.subheader("Lernmodus: Aktiv erinnern")
-        
-        if os.path.exists(str(item.get('bild_pfad', ''))):
-            st.image(item['bild_pfad'], width=300)
-        
-        # Das Tipp-Feld (wird nicht automatisch bewertet)
-        if not st.session_state.show_solution:
-            st.session_state.user_guess = st.text_input("Überlege kurz: Wie heißt diese Gemeinde?", placeholder="Hier tippen zum Einprägen...")
-            if st.button("Lösung aufdecken", use_container_width=True):
-                st.session_state.show_solution = True
-                st.rerun()
-        else:
-            # Vergleichsanzeige
-            st.markdown(f"### Lösung: **{name_richtig}**")
-            if st.session_state.user_guess:
-                st.write(f"Dein Tipp war: *{st.session_state.user_guess}*")
-            
-            st.write("---")
-            st.write("Wie gut konntest du dich erinnern?")
-            c1, c2, c3 = st.columns(3)
-            if c1.button("❌ Nicht gewusst"):
-                next_question(k_wahl)
-                st.rerun()
-            if c2.button("✅ Gewusst"):
-                next_question(k_wahl)
-                st.rerun()
-            if c3.button("⭐ Ganz einfach"):
-                next_question(k_wahl)
-                st.rerun()
-
-    # --- QUIZMODUS (STRENG) ---
+    st.subheader("Lernmodus: Aktiv erinnern")
+    if os.path.exists(str(item.get('bild_pfad', ''))):
+        st.image(item['bild_pfad'], width=300)
+    
+    if not st.session_state.show_solution:
+        st.session_state.user_guess = st.text_input("Überlege kurz: Wie heißt diese Gemeinde?", key="learn_input")
+        if st.button("Lösung aufdecken"):
+            st.session_state.show_solution = True
+            st.rerun()
     else:
+        st.markdown(f"### Lösung: **{name_richtig}**")
+        if st.session_state.user_guess:
+            st.write(f"Dein Tipp war: *{st.session_state.user_guess}*")
+        
+        c1, c2, c3 = st.columns(3)
+        if c1.button("❌ Nicht gewusst"): next_question(k_wahl); st.rerun()
+        if c2.button("✅ Gewusst"): next_question(k_wahl); st.rerun()
+        if c3.button("⭐ Ganz einfach"): next_question(k_wahl); st.rerun()
+
+elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
+    if st.session_state.current_item:
+        item = st.session_state.current_item
+        name_richtig = str(item.get('gemeinde', ''))
+        
+        # Statistik Anzeige
         s = st.session_state.quiz_stats
         beantw = s['correct'] + s['wrong']
         st.subheader(f"Frage {beantw + 1} von {s['total']}")
         
+        col_stats = st.columns(3)
+        col_stats[0].metric("Richtig", s['correct'])
+        col_stats[1].metric("Falsch", s['wrong'])
+        quote = (s['correct'] / beantw * 100) if beantw > 0 else 0
+        col_stats[2].metric("Quote", f"{quote:.1f}%")
+
         if os.path.exists(str(item.get('bild_pfad', ''))):
             st.image(item['bild_pfad'], width=300)
 
-        user_input = st.text_input("Name der Gemeinde:", key=f"q_{name_richtig}", disabled=st.session_state.get('q_answered', False))
+        # Feedback Meldung anzeigen
+        if st.session_state.q_feedback:
+            if "Korrekt" in st.session_state.q_feedback:
+                st.success(st.session_state.q_feedback)
+            else:
+                st.error(st.session_state.q_feedback)
+
+        user_input = st.text_input("Name der Gemeinde:", key=f"q_in_{name_richtig}", disabled=st.session_state.q_answered)
         
-        if not st.session_state.get('q_answered', False):
+        if not st.session_state.q_answered:
             if st.button("Prüfen"):
                 if user_input.lower().strip() == name_richtig.lower().strip():
-                    st.success(f"Korrekt! Das ist {name_richtig}.")
+                    st.session_state.q_feedback = f"Korrekt! Das ist {name_richtig}."
                     st.session_state.quiz_stats['correct'] += 1
                 else:
-                    st.error(f"Falsch! Die richtige Lösung ist: {name_richtig}")
+                    st.session_state.q_feedback = f"Falsch! Die richtige Lösung ist: {name_richtig}"
                     st.session_state.quiz_stats['wrong'] += 1
                     st.session_state.quiz_stats['wrong_list'].append(item)
                 st.session_state.q_answered = True
                 st.rerun()
         else:
             if st.button("Nächstes Wappen ➡️"):
-                st.session_state.q_answered = False
                 next_question()
                 st.rerun()
+    else:
+        st.balloons()
+        st.header("Quiz beendet!")
+        st.metric("Endergebnis", f"{st.session_state.quiz_stats['correct']} / {st.session_state.quiz_stats['total']}")
+        if st.button("Neues Quiz starten"):
+            st.session_state.quiz_active = False
+            st.rerun()
 
-elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_stats['total'] > 0:
-    st.balloons()
-    st.header("Quiz beendet!")
-    st.write(f"Ergebnis: {st.session_state.quiz_stats['correct']} von {st.session_state.quiz_stats['total']} richtig.")
-    if st.button("Zurück zum Start"):
-        st.session_state.current_item = None
-        st.rerun()
 else:
-    st.info("Wähle links einen Kanton zum Lernen aus!")
+    if mode == "Quiz (Strenge Prüfung)":
+        st.info("Wähle links eine Region und klicke auf 'Quiz starten'.")
+    else:
+        st.info("Wähle einen Kanton aus, um mit dem Lernen zu beginnen.")
