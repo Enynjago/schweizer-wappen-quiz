@@ -9,19 +9,24 @@ from thefuzz import fuzz
 def load_data():
     if os.path.exists("gemeinden.csv"):
         try:
-            # Erzwungene Semikolon-Trennung für deine Datei
-            df = pd.read_csv("gemeinden.csv", sep=';')
+            # Wir lesen die Datei ein und entfernen Zeilen, die komplett leer sind
+            df = pd.read_csv("gemeinden.csv", sep=';').dropna(how='all')
+            # Spaltennamen säubern
             df.columns = [c.lower().strip() for c in df.columns]
+            # Sicherstellen, dass die Gemeinde-Spalte existiert und keine "nan" Werte enthält
+            if 'gemeinde' in df.columns:
+                df = df[df['gemeinde'].notna()]
+                df['gemeinde'] = df['gemeinde'].astype(str).str.strip()
             return df
         except Exception as e:
-            st.error(f"Fehler beim Laden: {e}")
+            st.error(f"Fehler beim Laden der CSV: {e}")
     return pd.DataFrame(columns=["gemeinde", "kanton", "bild_pfad"])
 
 df = load_data()
 
 # --- HILFSFUNKTION FÜR TIPPS ---
 def get_hint(word, level):
-    if not word or level == 0: return ""
+    if not word or word == "nan" or level == 0: return ""
     parts = str(word).split('-')
     hint_parts = []
     for p in parts:
@@ -99,8 +104,8 @@ if st.session_state.current_item:
         c1, c2, c3 = st.columns(3)
         c1.metric("Richtig", s['correct'])
         c2.metric("Falsch", s['wrong'])
-        q = (s['correct'] / beantw * 100) if beantw > 0 else 0
-        c3.metric("Quote", f"{q:.1f}%")
+        q_rate = (s['correct'] / beantw * 100) if beantw > 0 else 0
+        c3.metric("Quote", f"{q_rate:.1f}%")
 
     if os.path.exists(str(item.get('bild_pfad', ''))):
         st.image(item['bild_pfad'], width=300)
@@ -144,16 +149,5 @@ if st.session_state.current_item:
         if st.button("Nächstes Wappen ➡️"):
             next_question(k_wahl if mode == "Lernen" else None)
             st.rerun()
-
-elif mode == "Quiz" and st.session_state.quiz_stats['total'] > 0:
-    st.balloons()
-    st.header("Quiz beendet!")
-    s = st.session_state.quiz_stats
-    st.write(f"Ergebnis: {s['correct']} von {s['total']} richtig.")
-    if s['wrong_list'] and st.button("Fehler wiederholen"):
-        st.session_state.quiz_queue = s['wrong_list'].copy()
-        st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(s['wrong_list']), "wrong_list": []}
-        next_question()
-        st.rerun()
 else:
-    st.info("Wähle einen Kanton/Modus und klicke auf den Button!")
+    st.info("Wähle einen Kanton oder starte das Quiz!")
