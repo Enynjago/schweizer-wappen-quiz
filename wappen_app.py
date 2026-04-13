@@ -30,6 +30,8 @@ if "setup_done" not in st.session_state:
         "q_answered": False,
         "q_feedback": None,
         "quiz_active": False,
+        "quiz_finished": False,
+        "last_pool": [], # Speichert den letzten Pool für "Alles wiederholen"
         "quiz_stats": {"correct": 0, "wrong": 0, "total": 0, "wrong_list": []},
         "quiz_queue": [],
         "setup_done": True
@@ -58,11 +60,12 @@ def next_question(kanton_filter=None):
             st.session_state.current_item = st.session_state.quiz_queue.pop(0)
         else:
             st.session_state.current_item = None
-            st.session_state.quiz_active = False
+            st.session_state.quiz_finished = True
 
 # --- STEUERUNG ---
 if mode == "Lernen (Anki + Tippen)":
-    st.session_state.quiz_active = False # Quiz zurücksetzen wenn Modus gewechselt wird
+    st.session_state.quiz_active = False
+    st.session_state.quiz_finished = False
     kantone = sorted(df['kanton'].unique()) if not df.empty else []
     k_wahl = st.sidebar.selectbox("Kanton wählen", kantone if kantone else ["Keine Daten"])
     if st.session_state.current_item is None:
@@ -73,9 +76,11 @@ else:
     if st.sidebar.button("Quiz starten"):
         pool = df if q_reg == "Alle" else df[df['kanton'] == q_reg]
         if not pool.empty:
+            st.session_state.last_pool = pool.to_dict('records')
             st.session_state.quiz_queue = pool.sample(frac=1).to_dict('records')
             st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
             st.session_state.quiz_active = True
+            st.session_state.quiz_finished = False
             next_question()
             st.rerun()
 
@@ -83,7 +88,6 @@ else:
 if mode == "Lernen (Anki + Tippen)" and st.session_state.current_item:
     item = st.session_state.current_item
     name_richtig = str(item.get('gemeinde', ''))
-    
     st.subheader("Lernmodus: Aktiv erinnern")
     if os.path.exists(str(item.get('bild_pfad', ''))):
         st.image(item['bild_pfad'], width=300)
@@ -97,37 +101,32 @@ if mode == "Lernen (Anki + Tippen)" and st.session_state.current_item:
         st.markdown(f"### Lösung: **{name_richtig}**")
         if st.session_state.user_guess:
             st.write(f"Dein Tipp war: *{st.session_state.user_guess}*")
-        
         c1, c2, c3 = st.columns(3)
         if c1.button("❌ Nicht gewusst"): next_question(k_wahl); st.rerun()
         if c2.button("✅ Gewusst"): next_question(k_wahl); st.rerun()
         if c3.button("⭐ Ganz einfach"): next_question(k_wahl); st.rerun()
 
 elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
-    if st.session_state.current_item:
+    # --- QUIZ LÄUFT ---
+    if not st.session_state.quiz_finished and st.session_state.current_item:
         item = st.session_state.current_item
         name_richtig = str(item.get('gemeinde', ''))
-        
-        # Statistik Anzeige
         s = st.session_state.quiz_stats
         beantw = s['correct'] + s['wrong']
-        st.subheader(f"Frage {beantw + 1} von {s['total']}")
         
-        col_stats = st.columns(3)
-        col_stats[0].metric("Richtig", s['correct'])
-        col_stats[1].metric("Falsch", s['wrong'])
+        st.subheader(f"Frage {beantw + 1} von {s['total']}")
+        cols = st.columns(3)
+        cols[0].metric("Richtig", s['correct'])
+        cols[1].metric("Falsch", s['wrong'])
         quote = (s['correct'] / beantw * 100) if beantw > 0 else 0
-        col_stats[2].metric("Quote", f"{quote:.1f}%")
+        cols[2].metric("Quote", f"{quote:.1f}%")
 
         if os.path.exists(str(item.get('bild_pfad', ''))):
             st.image(item['bild_pfad'], width=300)
 
-        # Feedback Meldung anzeigen
         if st.session_state.q_feedback:
-            if "Korrekt" in st.session_state.q_feedback:
-                st.success(st.session_state.q_feedback)
-            else:
-                st.error(st.session_state.q_feedback)
+            if "Korrekt" in st.session_state.q_feedback: st.success(st.session_state.q_feedback)
+            else: st.error(st.session_state.q_feedback)
 
         user_input = st.text_input("Name der Gemeinde:", key=f"q_in_{name_richtig}", disabled=st.session_state.q_answered)
         
@@ -146,16 +145,48 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
             if st.button("Nächstes Wappen ➡️"):
                 next_question()
                 st.rerun()
-    else:
+
+    # --- QUIZ ERGEBNIS ÜBERSICHT ---
+    elif st.session_state.quiz_finished:
         st.balloons()
-        st.header("Quiz beendet!")
-        st.metric("Endergebnis", f"{st.session_state.quiz_stats['correct']} / {st.session_state.quiz_stats['total']}")
-        if st.button("Neues Quiz starten"):
-            st.session_state.quiz_active = False
-            st.rerun()
+        st.header("Quiz abgeschlossen! 🎉")
+        s = st.session_state.quiz_stats
+        
+        # Große Statistik-Boxen
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Gesamt", s['total'])
+        c2.metric("Richtig", s['correct'], delta=f"{s['correct']}", delta_color="normal")
+        c3.metric("Falsch", s['wrong'], delta=f"-{s['wrong']}", delta_color="inverse")
+        
+        final_quote = (s['correct'] / s['total'] * 100) if s['total'] > 0 else 0
+        st.write(f"### Deine Erfolgsquote: **{final_quote:.1f}%**")
+        
+        st.divider()
+        st.subheader("Wie möchtest du weitermachen?")
+        
+        col_btn1, col_btn2 = st.columns(2)
+        
+        with col_btn1:
+            if st.button("🔄 Alles wiederholen", use_container_width=True):
+                # Ganzen Pool neu mischen und starten
+                st.session_state.quiz_queue = random.sample(st.session_state.last_pool, len(st.session_state.last_pool))
+                st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
+                st.session_state.quiz_finished = False
+                next_question()
+                st.rerun()
+        
+        with col_btn2:
+            falsche_anzahl = len(s['wrong_list'])
+            if falsche_anzahl > 0:
+                if st.button(f"🎯 Nur Fehler wiederholen ({falsche_anzahl})", use_container_width=True):
+                    # Nur die Fehlerliste als neue Queue nehmen
+                    st.session_state.quiz_queue = random.sample(s['wrong_list'], len(s['wrong_list']))
+                    st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
+                    st.session_state.quiz_finished = False
+                    next_question()
+                    st.rerun()
+            else:
+                st.success("Wahnsinn! Du hast alle Wappen richtig gewusst. Keine Fehler zum Wiederholen!")
 
 else:
-    if mode == "Quiz (Strenge Prüfung)":
-        st.info("Wähle links eine Region und klicke auf 'Quiz starten'.")
-    else:
-        st.info("Wähle einen Kanton aus, um mit dem Lernen zu beginnen.")
+    st.info("Wähle links eine Region und klicke auf 'Quiz starten' oder lerne im Anki-Modus.")
