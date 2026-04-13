@@ -7,9 +7,14 @@ from thefuzz import fuzz
 # --- DATEN LADEN ---
 @st.cache_data
 def load_data():
-    # Wir laden deine manuell erstellte Liste
     if os.path.exists("gemeinden.csv"):
-        return pd.read_csv("gemeinden.csv")
+        # sep=None und engine='python' lassen pandas das Trennzeichen automatisch erkennen
+        df = pd.read_csv("gemeinden.csv", sep=None, engine='python')
+        
+        # Um sicherzugehen, dass Leerzeichen oder Grossschreibung in den Spaltennamen
+        # keine Probleme machen, bereinigen wir diese hier:
+        df.columns = [c.lower().strip() for c in df.columns]
+        return df
     else:
         st.error("Datei 'gemeinden.csv' nicht gefunden!")
         return pd.DataFrame(columns=["gemeinde", "kanton", "bild_pfad"])
