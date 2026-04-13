@@ -32,8 +32,8 @@ def get_hint(word, level):
 
 # --- INITIALISIERUNG SESSION STATE ---
 if "current_item" not in st.session_state:
+    st.session_state.current_item = None  # Wichtig: Explizit auf None setzen
     st.session_state.update({
-        "current_item": None,
         "attempts": 0,
         "answered": False,
         "quiz_stats": {"correct": 0, "wrong": 0, "total": 0, "wrong_list": []},
