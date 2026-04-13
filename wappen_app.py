@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 import os
+from thefuzz import fuzz
 
 # --- DATEN LADEN ---
 @st.cache_data
@@ -25,6 +26,7 @@ if "setup_done" not in st.session_state:
     st.session_state.update({
         "current_item": None,
         "show_solution": False,
+        "user_guess": "",
         "quiz_stats": {"correct": 0, "wrong": 0, "total": 0, "wrong_list": []},
         "quiz_queue": [],
         "setup_done": True
@@ -36,11 +38,12 @@ if not df.empty:
     st.sidebar.metric("Erfasste Gemeinden", f"{len(df)} / 2131")
 
 st.sidebar.divider()
-mode = st.sidebar.radio("Modus wählen", ["Lernen (Anki-Style)", "Quiz (Eingabe)"])
+mode = st.sidebar.radio("Modus wählen", ["Lernen (Anki + Tippen)", "Quiz (Strenge Prüfung)"])
 
 def next_question(kanton_filter=None):
     st.session_state.show_solution = False
-    if mode == "Lernen (Anki-Style)":
+    st.session_state.user_guess = ""
+    if mode == "Lernen (Anki + Tippen)":
         pool = df[df['kanton'] == kanton_filter] if kanton_filter else df
         if not pool.empty:
             st.session_state.current_item = pool.sample(1).iloc[0].to_dict()
@@ -51,7 +54,7 @@ def next_question(kanton_filter=None):
             st.session_state.current_item = None
 
 # --- STEUERUNG ---
-if mode == "Lernen (Anki-Style)":
+if mode == "Lernen (Anki + Tippen)":
     kantone = sorted(df['kanton'].unique()) if not df.empty else []
     k_wahl = st.sidebar.selectbox("Kanton wählen", kantone if kantone else ["Keine Daten"])
     if st.session_state.current_item is None:
@@ -72,55 +75,72 @@ if st.session_state.current_item:
     item = st.session_state.current_item
     name_richtig = str(item.get('gemeinde', ''))
     
-    # --- LERNMODUS (ANKI) ---
-    if mode == "Lernen (Anki-Style)":
-        st.subheader("Lernmodus: Karteikarten")
+    # --- LERNMODUS (ANKI + TIPPEN) ---
+    if mode == "Lernen (Anki + Tippen)":
+        st.subheader("Lernmodus: Aktiv erinnern")
         
-        # Wappen zeigen
         if os.path.exists(str(item.get('bild_pfad', ''))):
-            st.image(item['bild_pfad'], width=350)
+            st.image(item['bild_pfad'], width=300)
         
-        st.write("---")
-        
+        # Das Tipp-Feld (wird nicht automatisch bewertet)
         if not st.session_state.show_solution:
-            if st.button("Lösung anzeigen", use_container_width=True):
+            st.session_state.user_guess = st.text_input("Überlege kurz: Wie heißt diese Gemeinde?", placeholder="Hier tippen zum Einprägen...")
+            if st.button("Lösung aufdecken", use_container_width=True):
                 st.session_state.show_solution = True
                 st.rerun()
         else:
-            # Lösung groß anzeigen
+            # Vergleichsanzeige
             st.markdown(f"### Lösung: **{name_richtig}**")
-            st.write(f"Kanton: {item.get('kanton', '').upper()}")
+            if st.session_state.user_guess:
+                st.write(f"Dein Tipp war: *{st.session_state.user_guess}*")
             
+            st.write("---")
             st.write("Wie gut konntest du dich erinnern?")
             c1, c2, c3 = st.columns(3)
-            if c1.button("Nochmal (Falsch)", col1=True):
+            if c1.button("❌ Nicht gewusst"):
                 next_question(k_wahl)
                 st.rerun()
-            if c2.button("Gut (Gewusst)"):
+            if c2.button("✅ Gewusst"):
                 next_question(k_wahl)
                 st.rerun()
-            if c3.button("Einfach (Perfekt)"):
+            if c3.button("⭐ Ganz einfach"):
                 next_question(k_wahl)
                 st.rerun()
 
-    # --- QUIZMODUS (ALT) ---
+    # --- QUIZMODUS (STRENG) ---
     else:
-        # (Hier bleibt dein bisheriger Quiz-Code mit Eingabefeld...)
-        # ... (der Übersichtlichkeit halber abgekürzt, funktioniert aber wie zuvor)
-        st.write("Quizmodus aktiv – bitte Name eingeben.")
+        s = st.session_state.quiz_stats
+        beantw = s['correct'] + s['wrong']
+        st.subheader(f"Frage {beantw + 1} von {s['total']}")
+        
         if os.path.exists(str(item.get('bild_pfad', ''))):
             st.image(item['bild_pfad'], width=300)
-        user_input = st.text_input("Name der Gemeinde:", key=f"q_{name_richtig}")
-        if st.button("Prüfen"):
-            if user_input.lower().strip() == name_richtig.lower().strip():
-                st.success(f"Richtig! {name_richtig}")
-                st.session_state.quiz_stats['correct'] += 1
-            else:
-                st.error(f"Falsch! Richtig wäre {name_richtig}")
-                st.session_state.quiz_stats['wrong'] += 1
-            if st.button("Weiter"):
+
+        user_input = st.text_input("Name der Gemeinde:", key=f"q_{name_richtig}", disabled=st.session_state.get('q_answered', False))
+        
+        if not st.session_state.get('q_answered', False):
+            if st.button("Prüfen"):
+                if user_input.lower().strip() == name_richtig.lower().strip():
+                    st.success(f"Korrekt! Das ist {name_richtig}.")
+                    st.session_state.quiz_stats['correct'] += 1
+                else:
+                    st.error(f"Falsch! Die richtige Lösung ist: {name_richtig}")
+                    st.session_state.quiz_stats['wrong'] += 1
+                    st.session_state.quiz_stats['wrong_list'].append(item)
+                st.session_state.q_answered = True
+                st.rerun()
+        else:
+            if st.button("Nächstes Wappen ➡️"):
+                st.session_state.q_answered = False
                 next_question()
                 st.rerun()
 
+elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_stats['total'] > 0:
+    st.balloons()
+    st.header("Quiz beendet!")
+    st.write(f"Ergebnis: {st.session_state.quiz_stats['correct']} von {st.session_state.quiz_stats['total']} richtig.")
+    if st.button("Zurück zum Start"):
+        st.session_state.current_item = None
+        st.rerun()
 else:
-    st.info("Wähle einen Kanton zum Lernen aus!")
+    st.info("Wähle links einen Kanton zum Lernen aus!")
