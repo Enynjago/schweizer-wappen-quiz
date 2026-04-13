@@ -92,7 +92,8 @@ else: # QUIZ MODUS
             st.rerun()
 
 # --- HAUPTBEREICH ---
-if st.session_state.current_item:
+# Wir prüfen explizit auf "is not None", um den ValueError zu vermeiden
+if st.session_state.current_item is not None:
     item = st.session_state.current_item
     
     if mode == "Quiz":
