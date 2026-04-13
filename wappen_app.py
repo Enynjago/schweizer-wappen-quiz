@@ -92,65 +92,67 @@ else: # QUIZ MODUS
             st.rerun()
 
 # --- HAUPTBEREICH ---
-# Wir prüfen explizit auf "is not None", um den ValueError zu vermeiden
 if st.session_state.current_item is not None:
+    # Wir stellen sicher, dass 'item' wirklich existiert
     item = st.session_state.current_item
     
-    if mode == "Quiz":
-        s = st.session_state.quiz_stats
-        aktuell = s['correct'] + s['wrong'] + 1
-        st.write(f"**Frage {aktuell} von {s['total']}**")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Richtig", s['correct'])
-        c2.metric("Falsch", s['wrong'])
-        quote = (s['correct'] / (aktuell-1) * 100) if (aktuell-1) > 0 else 0
-        c3.metric("Quote", f"{quote:.1f}%")
+    # Sicherheitscheck: Hat das Item die Spalte 'gemeinde'?
+    if 'gemeinde' in item:
+        if mode == "Quiz":
+            s = st.session_state.quiz_stats
+            aktuell = s['correct'] + s['wrong'] + 1
+            st.write(f"**Frage {aktuell} von {s['total']}**")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Richtig", s['correct'])
+            c2.metric("Falsch", s['wrong'])
+            quote = (s['correct'] / (aktuell-1) * 100) if (aktuell-1) > 0 else 0
+            c3.metric("Quote", f"{quote:.1f}%")
 
-    # Wappen anzeigen
-    if os.path.exists(item['bild_pfad']):
-        st.image(item['bild_pfad'], width=250)
-    else:
-        st.error(f"Bild nicht gefunden: {item['bild_pfad']}")
+        # Wappen anzeigen
+        if os.path.exists(item['bild_pfad']):
+            st.image(item['bild_pfad'], width=250)
+        else:
+            st.error(f"Bild nicht gefunden: {item['bild_pfad']}")
 
-    # Lern-Tipps anzeigen
-    if mode == "Lernen" and st.session_state.attempts > 0:
-        st.info(get_hint(item['gemeinde'], st.session_state.attempts))
+        # Lern-Tipps anzeigen
+        if mode == "Lernen" and st.session_state.attempts > 0:
+            st.info(get_hint(item['gemeinde'], st.session_state.attempts))
 
-    # Eingabefeld
-    user_input = st.text_input("Name der Gemeinde:", key=f"in_{item['gemeinde']}", disabled=st.session_state.answered)
+        # Eingabefeld (Hier lag der Fehler im Screenshot)
+        user_input = st.text_input("Name der Gemeinde:", key=f"in_{item['gemeinde']}", disabled=st.session_state.answered)
 
-    if not st.session_state.answered:
-        if st.button("Prüfen"):
-            # Vergleich (Fuzzy Matching für kleine Tippfehler)
-            score = fuzz.ratio(user_input.lower().strip(), item['gemeinde'].lower().strip())
-            
-            if score == 100:
-                st.success(f"Korrekt! Das ist {item['gemeinde']}.")
-                if mode == "Quiz": st.session_state.quiz_stats['correct'] += 1
-                st.session_state.answered = True
-            else:
-                st.session_state.attempts += 1
-                if mode == "Lernen":
-                    if st.session_state.attempts >= 3:
-                        st.error(f"Lösung: {item['gemeinde']}")
-                        st.session_state.answered = True
-                    else:
-                        st.warning("Falsch! Ein Tipp wurde oben eingeblendet.")
-                else: # Quiz (nur 1 Versuch)
-                    st.error(f"Falsch! Richtig wäre: {item['gemeinde']}")
-                    st.session_state.quiz_stats['wrong'] += 1
-                    st.session_state.quiz_stats['wrong_list'].append(item)
+        if not st.session_state.answered:
+            if st.button("Prüfen"):
+                score = fuzz.ratio(user_input.lower().strip(), item['gemeinde'].lower().strip())
+                
+                if score == 100:
+                    st.success(f"Korrekt! Das ist {item['gemeinde']}.")
+                    if mode == "Quiz": st.session_state.quiz_stats['correct'] += 1
                     st.session_state.answered = True
-            st.rerun()
-    
-    # Nächstes Wappen Button (erscheint erst nach Prüfung)
-    if st.session_state.answered:
-        if st.button("Nächstes Wappen ➡️"):
-            if mode == "Lernen":
-                next_question(kanton_wahl)
-            else:
-                next_question()
-            st.rerun()
+                else:
+                    st.session_state.attempts += 1
+                    if mode == "Lernen":
+                        if st.session_state.attempts >= 3:
+                            st.error(f"Lösung: {item['gemeinde']}")
+                            st.session_state.answered = True
+                        else:
+                            st.warning("Falsch! Ein Tipp wurde oben eingeblendet.")
+                    else: # Quiz
+                        st.error(f"Falsch! Richtig wäre: {item['gemeinde']}")
+                        st.session_state.quiz_stats['wrong'] += 1
+                        st.session_state.quiz_stats['wrong_list'].append(item)
+                        st.session_state.answered = True
+                st.rerun()
+        
+        if st.session_state.answered:
+            if st.button("Nächstes Wappen ➡️"):
+                if mode == "Lernen":
+                    next_question(kanton_wahl)
+                else:
+                    next_question()
+                st.rerun()
+    else:
+        st.error("Fehler in der CSV-Struktur: Spalte 'gemeinde' fehlt im Datensatz.")
 
 elif mode == "Quiz" and st.session_state.quiz_stats['total'] > 0:
     st.balloons()
