@@ -9,11 +9,8 @@ from thefuzz import fuzz
 def load_data():
     if os.path.exists("gemeinden.csv"):
         try:
-            # Wir lesen die Datei ein und entfernen Zeilen, die komplett leer sind
             df = pd.read_csv("gemeinden.csv", sep=';').dropna(how='all')
-            # Spaltennamen säubern
             df.columns = [c.lower().strip() for c in df.columns]
-            # Sicherstellen, dass die Gemeinde-Spalte existiert und keine "nan" Werte enthält
             if 'gemeinde' in df.columns:
                 df = df[df['gemeinde'].notna()]
                 df['gemeinde'] = df['gemeinde'].astype(str).str.strip()
@@ -74,13 +71,13 @@ def next_question(kanton_filter=None):
         else:
             st.session_state.current_item = None
 
-# --- STEUERUNG ---
+# --- STEUERUNG (NUR AUSWAHL IN SIDEBAR) ---
 if mode == "Lernen":
     kantone = sorted(df['kanton'].unique()) if not df.empty else []
     k_wahl = st.sidebar.selectbox("Kanton wählen", kantone if kantone else ["Keine Daten"])
-    if st.sidebar.button("Nächstes Wappen"):
+    # Falls noch kein Item geladen wurde, automatisch das erste starten
+    if st.session_state.current_item is None and not df.empty:
         next_question(k_wahl)
-        st.rerun()
 else:
     kantone_q = ["Alle"] + sorted(df['kanton'].unique().tolist()) if not df.empty else []
     q_reg = st.sidebar.selectbox("Region wählen", kantone_q)
@@ -107,47 +104,67 @@ if st.session_state.current_item:
         q_rate = (s['correct'] / beantw * 100) if beantw > 0 else 0
         c3.metric("Quote", f"{q_rate:.1f}%")
 
+    # Wappen
     if os.path.exists(str(item.get('bild_pfad', ''))):
         st.image(item['bild_pfad'], width=300)
     
+    # Lern-Tipps
     if mode == "Lernen" and not st.session_state.answered and st.session_state.attempts > 0:
         st.info(get_hint(name_richtig, st.session_state.attempts))
 
+    # Feedback
     if st.session_state.feedback_msg:
         if st.session_state.feedback_type == "success": st.success(st.session_state.feedback_msg)
         elif st.session_state.feedback_type == "error": st.error(st.session_state.feedback_msg)
         else: st.warning(st.session_state.feedback_msg)
 
+    # Eingabe
     user_input = st.text_input("Name der Gemeinde:", key=f"in_{name_richtig}", disabled=st.session_state.answered)
 
-    if not st.session_state.answered and st.button("Prüfen"):
-        score = fuzz.ratio(user_input.lower().strip(), name_richtig.lower().strip())
-        if score == 100:
-            st.session_state.feedback_msg = f"Korrekt! Es ist {name_richtig}."
-            st.session_state.feedback_type = "success"
-            if mode == "Quiz": st.session_state.quiz_stats['correct'] += 1
-            st.session_state.answered = True
-        else:
-            if mode == "Lernen":
-                st.session_state.attempts += 1
-                if st.session_state.attempts >= 3:
-                    st.session_state.feedback_msg = f"Lösung: {name_richtig}"
-                    st.session_state.feedback_type = "error"
+    # Buttons direkt unter der Eingabe
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        if not st.session_state.answered:
+            if st.button("Prüfen"):
+                score = fuzz.ratio(user_input.lower().strip(), name_richtig.lower().strip())
+                if score == 100:
+                    st.session_state.feedback_msg = f"Korrekt! Es ist {name_richtig}."
+                    st.session_state.feedback_type = "success"
+                    if mode == "Quiz": st.session_state.quiz_stats['correct'] += 1
                     st.session_state.answered = True
                 else:
-                    st.session_state.feedback_msg = f"Falsch! (Versuch {st.session_state.attempts}/3)"
-                    st.session_state.feedback_type = "warning"
-            else:
-                st.session_state.feedback_msg = f"Falsch! Richtig ist: {name_richtig}"
-                st.session_state.feedback_type = "error"
-                st.session_state.quiz_stats['wrong'] += 1
-                st.session_state.quiz_stats['wrong_list'].append(item)
-                st.session_state.answered = True
-        st.rerun()
-    
+                    if mode == "Lernen":
+                        st.session_state.attempts += 1
+                        if st.session_state.attempts >= 3:
+                            st.session_state.feedback_msg = f"Lösung: {name_richtig}"
+                            st.session_state.feedback_type = "error"
+                            st.session_state.answered = True
+                        else:
+                            st.session_state.feedback_msg = f"Falsch! (Versuch {st.session_state.attempts}/3)"
+                            st.session_state.feedback_type = "warning"
+                    else: # Quiz
+                        st.session_state.feedback_msg = f"Falsch! Richtig ist: {name_richtig}"
+                        st.session_state.feedback_type = "error"
+                        st.session_state.quiz_stats['wrong'] += 1
+                        st.session_state.quiz_stats['wrong_list'].append(item)
+                        st.session_state.answered = True
+                st.rerun()
+
     if st.session_state.answered:
         if st.button("Nächstes Wappen ➡️"):
             next_question(k_wahl if mode == "Lernen" else None)
             st.rerun()
+
+elif mode == "Quiz" and st.session_state.quiz_stats['total'] > 0:
+    st.balloons()
+    st.header("Quiz beendet!")
+    s = st.session_state.quiz_stats
+    st.write(f"Ergebnis: {s['correct']} von {s['total']} richtig.")
+    if s['wrong_list'] and st.button("Fehler wiederholen"):
+        st.session_state.quiz_queue = s['wrong_list'].copy()
+        st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(s['wrong_list']), "wrong_list": []}
+        next_question()
+        st.rerun()
 else:
-    st.info("Wähle einen Kanton oder starte das Quiz!")
+    st.info("Willkommen! Wähle links einen Kanton oder starte das Quiz.")
