@@ -8,9 +8,9 @@ from thefuzz import fuzz
 @st.cache_data
 def load_data():
     if os.path.exists("gemeinden.csv"):
-        # Automatisches Erkennen von Trennzeichen (Semikolon oder Komma)
-        df = pd.read_csv("gemeinden.csv", sep=None, engine='python')
-        # Spaltennamen bereinigen: alles klein und ohne Leerzeichen
+        # Wir erzwingen das Semikolon, da deine Datei so aufgebaut ist
+        df = pd.read_csv("gemeinden.csv", sep=';')
+        # Bereinigt Spaltennamen (klein schreiben, Leerzeichen entfernen)
         df.columns = [c.lower().strip() for c in df.columns]
         return df
     return pd.DataFrame(columns=["gemeinde", "kanton", "bild_pfad"])
@@ -20,13 +20,13 @@ df = load_data()
 # --- HILFSFUNKTION FÜR BUCHSTABEN-TIPPS ---
 def get_hint(word, level):
     if level == 0: return ""
+    # Erkennt Bindestriche und gibt für jeden Wortteil separat Tipps
     parts = word.split('-')
     hint_parts = []
     for p in parts:
         if len(p) <= level:
             hint_parts.append(p)
         else:
-            # Zeigt die ersten 'level' Buchstaben, der Rest sind Punkte
             hint_parts.append(p[:level] + "." * (len(p)-level))
     return "Tipp: " + "-".join(hint_parts)
 
@@ -62,6 +62,7 @@ def next_question(kanton_filter=None):
     if mode == "Lernen":
         pool = df[df['kanton'] == kanton_filter] if kanton_filter else df
         if not pool.empty:
+            # Wir nehmen 10 zufällige, falls der Kanton gross ist, sonst alle
             st.session_state.current_item = pool.sample(1).iloc[0].to_dict()
     else: # Quiz
         if st.session_state.quiz_queue:
@@ -93,11 +94,10 @@ else: # QUIZ
             st.rerun()
 
 # --- HAUPTBEREICH ---
-# WICHTIG: Prüfung auf 'is not None' um den ValueError zu vermeiden
 if st.session_state.current_item is not None:
     item = st.session_state.current_item
     
-    # Sicherstellen, dass die Spalte existiert (gegen KeyError)
+    # Sicherheitscheck für die Spalte
     if 'gemeinde' in item:
         if mode == "Quiz":
             s = st.session_state.quiz_stats
@@ -106,24 +106,27 @@ if st.session_state.current_item is not None:
             c1, c2, c3 = st.columns(3)
             c1.metric("Richtig", s['correct'])
             c2.metric("Falsch", s['wrong'])
-            quote = (s['correct'] / (aktuell-1) * 100) if (aktuell-1) > 0 else 0
+            # Quote basierend auf bereits beantworteten Fragen
+            beantwortet = s['correct'] + s['wrong']
+            quote = (s['correct'] / beantwortet * 100) if beantwortet > 0 else 0
             c3.metric("Quote", f"{quote:.1f}%")
 
         # Wappen anzeigen
         if os.path.exists(item['bild_pfad']):
             st.image(item['bild_pfad'], width=300)
         else:
-            st.warning(f"Bild nicht gefunden: {item['bild_pfad']}")
+            st.warning(f"Bilddatei nicht gefunden: {item['bild_pfad']}")
 
-        # Tipps (nur im Lernmodus)
+        # Tipps einblenden (nur im Lernmodus)
         if mode == "Lernen" and st.session_state.attempts > 0:
             st.info(get_hint(item['gemeinde'], st.session_state.attempts))
 
         # Eingabefeld
-        user_input = st.text_input("Name der Gemeinde:", key=f"input_{item['gemeinde']}", disabled=st.session_state.answered)
+        user_input = st.text_input("Wie heisst diese Gemeinde?", key=f"input_{item['gemeinde']}", disabled=st.session_state.answered)
 
         if not st.session_state.answered:
             if st.button("Prüfen"):
+                # Vergleich ohne Rücksicht auf Gross/Klein und Leerzeichen
                 score = fuzz.ratio(user_input.lower().strip(), item['gemeinde'].lower().strip())
                 
                 if score == 100:
@@ -137,14 +140,15 @@ if st.session_state.current_item is not None:
                             st.error(f"Lösung: {item['gemeinde']}")
                             st.session_state.answered = True
                         else:
-                            st.warning("Falsch! Ein Tipp wurde eingeblendet.")
-                    else: # Quiz
-                        st.error(f"Falsch! Richtig wäre: {item['gemeinde']}")
+                            st.warning("Falsch! Ein Tipp wurde oben eingeblendet.")
+                    else: # Quizmodus: Sofort fertig nach 1 Versuch
+                        st.error(f"Falsch! Die richtige Antwort ist: {item['gemeinde']}")
                         st.session_state.quiz_stats['wrong'] += 1
                         st.session_state.quiz_stats['wrong_list'].append(item)
                         st.session_state.answered = True
                 st.rerun()
         
+        # "Nächstes Wappen" erscheint erst nach der Prüfung
         if st.session_state.answered:
             if st.button("Nächstes Wappen ➡️"):
                 if mode == "Lernen":
@@ -153,23 +157,23 @@ if st.session_state.current_item is not None:
                     next_question()
                 st.rerun()
     else:
-        st.error("Die CSV-Spalte 'gemeinde' wurde nicht gefunden. Bitte prüfe die CSV-Datei.")
+        st.error("Fehler: Spalte 'gemeinde' in der CSV nicht gefunden.")
 
 elif mode == "Quiz" and st.session_state.quiz_stats['total'] > 0:
     st.balloons()
-    st.header("Quiz beendet!")
+    st.header("Quiz abgeschlossen!")
     s = st.session_state.quiz_stats
-    st.write(f"Ergebnis: {s['correct']} von {s['total']} richtig.")
+    st.write(f"Du hast **{s['correct']} von {s['total']}** richtig beantwortet.")
     
     if s['wrong_list']:
-        st.subheader("Diese musst du noch üben:")
+        st.subheader("Diese Gemeinden musst du noch üben:")
         for w in s['wrong_list']:
             st.write(f"• {w['gemeinde']} ({w['kanton']})")
         
-        if st.button("Nur Fehler nochmals prüfen"):
+        if st.button("Nur die falschen Wappen nochmals prüfen"):
             st.session_state.quiz_queue = s['wrong_list'].copy()
             st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(s['wrong_list']), "wrong_list": []}
             next_question()
             st.rerun()
 else:
-    st.info("Wähle links einen Kanton oder starte das Quiz!")
+    st.info("Willkommen! Wähle links einen Kanton zum **Lernen** oder starte ein **Quiz**.")
