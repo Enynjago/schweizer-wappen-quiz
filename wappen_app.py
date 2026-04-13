@@ -36,13 +36,19 @@ if "mode" not in st.session_state:
     })
 
 # --- SIDEBAR ---
+# --- SIDEBAR & STATISTIK ---
 st.sidebar.title("🇨🇭 Wappen-Trainer")
-mode = st.sidebar.radio("Modus wählen", ["Lernen", "Quiz"])
 
-# Fortschritts-Statistik (Allgemein)
+# Statistik berechnen (DIESE ZEILEN HABEN GEFEHLT)
+anzahl_erfasst = len(df)
+gesamtzahl_schweiz = 2131
+prozent_erfasst = (anzahl_erfasst / gesamtzahl_schweiz) * 100
+
+st.sidebar.metric("Erfasste Gemeinden", f"{anzahl_erfasst} / {gesamtzahl_schweiz}")
+st.sidebar.progress(anzahl_erfasst / gesamtzahl_schweiz)
+st.sidebar.write(f"Du hast **{prozent_erfasst:.1f}%** der Schweiz in deiner Liste!")
+
 st.sidebar.divider()
-st.sidebar.write(f"Datenbank: {len(df)} / 2131 Wappen")
-st.sidebar.progress(len(df)/2131)
 
 # --- LOGIK: NÄCHSTES WAPPEN ---
 def next_question():
