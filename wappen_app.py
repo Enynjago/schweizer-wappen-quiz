@@ -8,33 +8,144 @@ from thefuzz import fuzz
 @st.cache_data
 def load_data():
     if os.path.exists("gemeinden.csv"):
-        # Wir erzwingen hier das Semikolon als Trennzeichen (sep=';')
         df = pd.read_csv("gemeinden.csv", sep=';')
-        
-        # Wir bereinigen die Namen zur Sicherheit trotzdem
         df.columns = [c.lower().strip() for c in df.columns]
         return df
-    else:
-        st.error("Datei 'gemeinden.csv' nicht gefunden!")
-        return pd.DataFrame(columns=["gemeinde", "kanton", "bild_pfad"])
+    return pd.DataFrame(columns=["gemeinde", "kanton", "bild_pfad"])
 
 df = load_data()
 
-# --- APP SETUP ---
-st.set_page_config(page_title="Wappen-Meister AG", page_icon="🇨🇭")
-st.title("🇨🇭 Wappen-Meister: Kanton Aargau")
+# --- HILFSFUNKTION FÜR BUCHSTABEN-TIPPS ---
+def get_hint(word, level):
+    if level == 0: return ""
+    parts = word.split('-')
+    hint_parts = []
+    for p in parts:
+        # Zeige 'level' Anzahl an Buchstaben pro Wortteil
+        hint_parts.append(p[:level] + "..." if len(p) > level else p)
+    return "Tipp: " + "-".join(hint_parts)
 
-if "current_item" not in st.session_state:
-    st.session_state.current_item = None
+# --- INITIALISIERUNG SESSION STATE ---
+if "mode" not in st.session_state:
+    st.session_state.update({
+        "current_item": None,
+        "attempts": 0,
+        "answered": False,
+        "quiz_stats": {"correct": 0, "wrong": 0, "total": 0, "wrong_list": []},
+        "quiz_queue": []
+    })
 
-# --- SIDEBAR & STATISTIK ---
-st.sidebar.header("Dein Fortschritt")
+# --- SIDEBAR ---
+st.sidebar.title("🇨🇭 Wappen-Trainer")
+mode = st.sidebar.radio("Modus wählen", ["Lernen", "Quiz"])
 
-# Statistik berechnen
-anzahl_erfasst = len(df)
-gesamtzahl_schweiz = 2131  # Stand 2024
-prozent = (anzahl_erfasst / gesamtzahl_schweiz) * 100
+# Fortschritts-Statistik (Allgemein)
+st.sidebar.divider()
+st.sidebar.write(f"Datenbank: {len(df)} / 2131 Wappen")
+st.sidebar.progress(len(df)/2131)
 
+# --- LOGIK: NÄCHSTES WAPPEN ---
+def next_question():
+    if mode == "Lernen":
+        pool = df[df['kanton'] == kanton_wahl]
+        if len(pool) > 10: pool = pool.sample(10) # Max 10 im Lernmodus
+        st.session_state.current_item = pool.sample(1).iloc[0]
+    else: # Quiz
+        if st.session_state.quiz_queue:
+            st.session_state.current_item = st.session_state.quiz_queue.pop(0)
+        else:
+            st.session_state.current_item = None
+    
+    st.session_state.attempts = 0
+    st.session_state.answered = False
+
+# --- MODUS SETUP ---
+if mode == "Lernen":
+    kanton_wahl = st.sidebar.selectbox("Kanton lernen", sorted(df['kanton'].unique()))
+    if st.sidebar.button("Lernsession starten / Neues Wappen"):
+        next_question()
+        st.rerun()
+
+else: # QUIZ MODUS
+    kanton_wahl = st.sidebar.selectbox("Quiz-Region", ["Alle"] + sorted(df['kanton'].unique().tolist()))
+    if st.sidebar.button("Quiz starten"):
+        pool = df if kanton_wahl == "Alle" else df[df['kanton'] == kanton_wahl]
+        queue = pool.sample(frac=1).to_dict('records') # Zufällige Reihenfolge
+        st.session_state.quiz_queue = queue
+        st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(queue), "wrong_list": []}
+        next_question()
+        st.rerun()
+
+# --- HAUPTBEREICH ---
+if st.session_state.current_item:
+    item = st.session_state.current_item
+    
+    # Quiz-Header Info
+    if mode == "Quiz":
+        stats = st.session_state.quiz_stats
+        progress = (stats['correct'] + stats['wrong'])
+        st.write(f"Frage {progress + 1} von {stats['total']}")
+        cols = st.columns(3)
+        cols[0].metric("Richtig", stats['correct'])
+        cols[1].metric("Falsch", stats['wrong'])
+        percent = (stats['correct'] / progress * 100) if progress > 0 else 0
+        cols[2].metric("Quote", f"{percent:.1f}%")
+
+    st.image(item['bild_pfad'], width=250)
+    
+    # Lernhilfe (Tipps)
+    if mode == "Lernen" and st.session_state.attempts > 0:
+        hint = get_hint(item['gemeinde'], st.session_state.attempts)
+        st.info(hint)
+
+    user_input = st.text_input("Gemeinde eingeben:", key=f"input_{item['gemeinde']}", disabled=st.session_state.answered)
+
+    # BUTTONS
+    if not st.session_state.answered:
+        if st.button("Prüfen"):
+            match = fuzz.ratio(user_input.lower(), item['gemeinde'].lower())
+            
+            if match == 100:
+                st.success(f"Richtig! Es ist {item['gemeinde']}.")
+                if mode == "Quiz": st.session_state.quiz_stats['correct'] += 1
+                st.session_state.answered = True
+            else:
+                st.session_state.attempts += 1
+                if mode == "Lernen":
+                    if st.session_state.attempts >= 3:
+                        st.error(f"Lösung: {item['gemeinde']}")
+                        st.session_state.answered = True
+                    else:
+                        st.warning("Falsch! Ein Tipp wurde eingeblendet.")
+                else: # Quiz Modus (nur 1 Versuch)
+                    st.error(f"Falsch! Die richtige Antwort wäre {item['gemeinde']} gewesen.")
+                    st.session_state.quiz_stats['wrong'] += 1
+                    st.session_state.quiz_stats['wrong_list'].append(item)
+                    st.session_state.answered = True
+            st.rerun()
+    
+    # Nächstes Wappen erscheint erst NACH dem Prüfen
+    if st.session_state.answered:
+        if st.button("Nächstes Wappen ➡️"):
+            next_question()
+            st.rerun()
+
+elif mode == "Quiz" and st.session_state.quiz_stats['total'] > 0:
+    st.balloons()
+    st.header("Quiz beendet!")
+    s = st.session_state.quiz_stats
+    st.write(f"Ergebnis: {s['correct']} von {s['total']} richtig.")
+    
+    if s['wrong_list']:
+        st.subheader("Diese hattest du falsch:")
+        for w in s['wrong_list']:
+            st.write(f"- {w['gemeinde']} ({w['kanton']})")
+        
+        if st.button("Nur falsche Wappen nochmals prüfen"):
+            st.session_state.quiz_queue = s['wrong_list'].copy()
+            st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(s['wrong_list']), "wrong_list": []}
+            next_question()
+            st.rerun()
 # Anzeige in der Sidebar
 st.sidebar.metric("Erfasste Gemeinden", f"{anzahl_erfasst} / {gesamtzahl_schweiz}")
 st.sidebar.progress(anzahl_erfasst / gesamtzahl_schweiz)
