@@ -8,11 +8,10 @@ from thefuzz import fuzz
 @st.cache_data
 def load_data():
     if os.path.exists("gemeinden.csv"):
-        # sep=None und engine='python' lassen pandas das Trennzeichen automatisch erkennen
-        df = pd.read_csv("gemeinden.csv", sep=None, engine='python')
+        # Wir erzwingen hier das Semikolon als Trennzeichen (sep=';')
+        df = pd.read_csv("gemeinden.csv", sep=';')
         
-        # Um sicherzugehen, dass Leerzeichen oder Grossschreibung in den Spaltennamen
-        # keine Probleme machen, bereinigen wir diese hier:
+        # Wir bereinigen die Namen zur Sicherheit trotzdem
         df.columns = [c.lower().strip() for c in df.columns]
         return df
     else:
