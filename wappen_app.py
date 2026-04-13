@@ -8,9 +8,9 @@ from thefuzz import fuzz
 @st.cache_data
 def load_data():
     if os.path.exists("gemeinden.csv"):
-        # Automatisches Erkennen von Trennzeichen (Semikolon-Support)
+        # Automatisches Erkennen von Trennzeichen (Semikolon oder Komma)
         df = pd.read_csv("gemeinden.csv", sep=None, engine='python')
-        # Spaltennamen bereinigen
+        # Spaltennamen bereinigen: alles klein und ohne Leerzeichen
         df.columns = [c.lower().strip() for c in df.columns]
         return df
     return pd.DataFrame(columns=["gemeinde", "kanton", "bild_pfad"])
@@ -20,50 +20,49 @@ df = load_data()
 # --- HILFSFUNKTION FÜR BUCHSTABEN-TIPPS ---
 def get_hint(word, level):
     if level == 0: return ""
-    # Erkennt Bindestriche und gibt für jeden Teil Tipps
     parts = word.split('-')
     hint_parts = []
     for p in parts:
         if len(p) <= level:
             hint_parts.append(p)
         else:
+            # Zeigt die ersten 'level' Buchstaben, der Rest sind Punkte
             hint_parts.append(p[:level] + "." * (len(p)-level))
     return "Tipp: " + "-".join(hint_parts)
 
 # --- INITIALISIERUNG SESSION STATE ---
 if "current_item" not in st.session_state:
-    st.session_state.current_item = None  # Wichtig: Explizit auf None setzen
+    st.session_state.current_item = None
+
+if "setup_done" not in st.session_state:
     st.session_state.update({
         "attempts": 0,
         "answered": False,
         "quiz_stats": {"correct": 0, "wrong": 0, "total": 0, "wrong_list": []},
-        "quiz_queue": []
+        "quiz_queue": [],
+        "setup_done": True
     })
 
 # --- SIDEBAR & STATISTIK ---
 st.sidebar.title("🇨🇭 Wappen-Trainer")
 
-# Globale Statistik
 anzahl_erfasst = len(df)
 gesamtzahl_schweiz = 2131
 prozent_erfasst = (anzahl_erfasst / gesamtzahl_schweiz) * 100 if gesamtzahl_schweiz > 0 else 0
 
 st.sidebar.metric("Erfasste Gemeinden", f"{anzahl_erfasst} / {gesamtzahl_schweiz}")
 st.sidebar.progress(min(prozent_erfasst / 100, 1.0))
-st.sidebar.write(f"Du hast **{prozent_erfasst:.1f}%** der Schweiz erfasst.")
+st.sidebar.write(f"Fortschritt: **{prozent_erfasst:.1f}%**")
 
 st.sidebar.divider()
-
-# Modus wählen
 mode = st.sidebar.radio("Modus wählen", ["Lernen", "Quiz"])
 
 # --- LOGIK: NÄCHSTES WAPPEN ---
 def next_question(kanton_filter=None):
     if mode == "Lernen":
-        pool = df[df['kanton'] == kanton_filter]
+        pool = df[df['kanton'] == kanton_filter] if kanton_filter else df
         if not pool.empty:
-            # Im Lernmodus wählen wir zufällig aus dem Pool
-            st.session_state.current_item = pool.sample(1).iloc[0]
+            st.session_state.current_item = pool.sample(1).iloc[0].to_dict()
     else: # Quiz
         if st.session_state.quiz_queue:
             st.session_state.current_item = st.session_state.quiz_queue.pop(0)
@@ -73,17 +72,19 @@ def next_question(kanton_filter=None):
     st.session_state.attempts = 0
     st.session_state.answered = False
 
-# --- STEUERUNG JE NACH MODUS ---
+# --- STEUERUNG ---
 if mode == "Lernen":
-    kanton_wahl = st.sidebar.selectbox("Kanton lernen", sorted(df['kanton'].unique()) if not df.empty else ["Keine Daten"])
+    kantone = sorted(df['kanton'].unique()) if not df.empty else []
+    kanton_wahl = st.sidebar.selectbox("Kanton lernen", kantone if kantone else ["Keine Daten"])
     if st.sidebar.button("Nächstes Wappen"):
         next_question(kanton_wahl)
         st.rerun()
 
-else: # QUIZ MODUS
-    kanton_wahl = st.sidebar.selectbox("Quiz-Region", ["Alle"] + sorted(df['kanton'].unique().tolist()) if not df.empty else ["Keine Daten"])
+else: # QUIZ
+    kantone_quiz = ["Alle"] + sorted(df['kanton'].unique().tolist()) if not df.empty else ["Keine Daten"]
+    quiz_region = st.sidebar.selectbox("Quiz-Region", kantone_quiz)
     if st.sidebar.button("Quiz starten"):
-        pool = df if kanton_wahl == "Alle" else df[df['kanton'] == kanton_wahl]
+        pool = df if quiz_region == "Alle" else df[df['kanton'] == quiz_region]
         if not pool.empty:
             queue = pool.sample(frac=1).to_dict('records')
             st.session_state.quiz_queue = queue
@@ -92,16 +93,16 @@ else: # QUIZ MODUS
             st.rerun()
 
 # --- HAUPTBEREICH ---
+# WICHTIG: Prüfung auf 'is not None' um den ValueError zu vermeiden
 if st.session_state.current_item is not None:
-    # Wir stellen sicher, dass 'item' wirklich existiert
     item = st.session_state.current_item
     
-    # Sicherheitscheck: Hat das Item die Spalte 'gemeinde'?
+    # Sicherstellen, dass die Spalte existiert (gegen KeyError)
     if 'gemeinde' in item:
         if mode == "Quiz":
             s = st.session_state.quiz_stats
             aktuell = s['correct'] + s['wrong'] + 1
-            st.write(f"**Frage {aktuell} von {s['total']}**")
+            st.subheader(f"Frage {aktuell} von {s['total']}")
             c1, c2, c3 = st.columns(3)
             c1.metric("Richtig", s['correct'])
             c2.metric("Falsch", s['wrong'])
@@ -110,16 +111,16 @@ if st.session_state.current_item is not None:
 
         # Wappen anzeigen
         if os.path.exists(item['bild_pfad']):
-            st.image(item['bild_pfad'], width=250)
+            st.image(item['bild_pfad'], width=300)
         else:
-            st.error(f"Bild nicht gefunden: {item['bild_pfad']}")
+            st.warning(f"Bild nicht gefunden: {item['bild_pfad']}")
 
-        # Lern-Tipps anzeigen
+        # Tipps (nur im Lernmodus)
         if mode == "Lernen" and st.session_state.attempts > 0:
             st.info(get_hint(item['gemeinde'], st.session_state.attempts))
 
-        # Eingabefeld (Hier lag der Fehler im Screenshot)
-        user_input = st.text_input("Name der Gemeinde:", key=f"in_{item['gemeinde']}", disabled=st.session_state.answered)
+        # Eingabefeld
+        user_input = st.text_input("Name der Gemeinde:", key=f"input_{item['gemeinde']}", disabled=st.session_state.answered)
 
         if not st.session_state.answered:
             if st.button("Prüfen"):
@@ -136,7 +137,7 @@ if st.session_state.current_item is not None:
                             st.error(f"Lösung: {item['gemeinde']}")
                             st.session_state.answered = True
                         else:
-                            st.warning("Falsch! Ein Tipp wurde oben eingeblendet.")
+                            st.warning("Falsch! Ein Tipp wurde eingeblendet.")
                     else: # Quiz
                         st.error(f"Falsch! Richtig wäre: {item['gemeinde']}")
                         st.session_state.quiz_stats['wrong'] += 1
@@ -152,23 +153,23 @@ if st.session_state.current_item is not None:
                     next_question()
                 st.rerun()
     else:
-        st.error("Fehler in der CSV-Struktur: Spalte 'gemeinde' fehlt im Datensatz.")
+        st.error("Die CSV-Spalte 'gemeinde' wurde nicht gefunden. Bitte prüfe die CSV-Datei.")
 
 elif mode == "Quiz" and st.session_state.quiz_stats['total'] > 0:
     st.balloons()
     st.header("Quiz beendet!")
     s = st.session_state.quiz_stats
-    st.write(f"Du hast {s['correct']} von {s['total']} Wappen richtig erkannt.")
+    st.write(f"Ergebnis: {s['correct']} von {s['total']} richtig.")
     
     if s['wrong_list']:
-        st.subheader("Diese Gemeinden musst du noch üben:")
+        st.subheader("Diese musst du noch üben:")
         for w in s['wrong_list']:
             st.write(f"• {w['gemeinde']} ({w['kanton']})")
         
-        if st.button("Nur falsche Wappen nochmals starten"):
+        if st.button("Nur Fehler nochmals prüfen"):
             st.session_state.quiz_queue = s['wrong_list'].copy()
             st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(s['wrong_list']), "wrong_list": []}
             next_question()
             st.rerun()
 else:
-    st.info("Wähle einen Kanton und klicke auf den Button, um zu starten!")
+    st.info("Wähle links einen Kanton oder starte das Quiz!")
