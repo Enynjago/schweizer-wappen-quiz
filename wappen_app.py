@@ -27,7 +27,21 @@ st.title("🇨🇭 Wappen-Meister: Kanton Aargau")
 if "current_item" not in st.session_state:
     st.session_state.current_item = None
 
-# --- SIDEBAR ---
+# --- SIDEBAR & STATISTIK ---
+st.sidebar.header("Dein Fortschritt")
+
+# Statistik berechnen
+anzahl_erfasst = len(df)
+gesamtzahl_schweiz = 2131  # Stand 2024
+prozent = (anzahl_erfasst / gesamtzahl_schweiz) * 100
+
+# Anzeige in der Sidebar
+st.sidebar.metric("Erfasste Gemeinden", f"{anzahl_erfasst} / {gesamtzahl_schweiz}")
+st.sidebar.progress(anzahl_erfasst / gesamtzahl_schweiz)
+st.sidebar.write(f"Du hast **{prozent:.1f}%** der Schweiz geschafft!")
+
+st.sidebar.divider()
+
 st.sidebar.header("Navigation")
 # Da du erst mal nur AG hast, filtern wir direkt oder lassen die Wahl
 kanton_wahl = st.sidebar.selectbox("Kanton", ["AG"] if "AG" in df['kanton'].values else ["Alle"])
