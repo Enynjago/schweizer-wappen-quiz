@@ -59,7 +59,6 @@ def next_question(kanton_filter=None):
     if mode == "Lernen":
         pool = df[df['kanton'] == kanton_filter] if kanton_filter else df
         if not pool.empty:
-            # Im Lernmodus wählen wir immer ein zufälliges aus dem Pool
             st.session_state.current_item = pool.sample(1).iloc[0].to_dict()
     else: # Quiz
         if st.session_state.quiz_queue:
@@ -119,7 +118,7 @@ if st.session_state.current_item is not None:
             st.info(get_hint(item['gemeinde'], 2))
         elif st.session_state.attempts >= 3 and not st.session_state.answered:
             st.error(f"Nicht ganz! Die richtige Lösung ist: **{item['gemeinde']}**")
-            st.session_state.answered = True # Beendet die Eingabe für dieses Wappen
+            st.session_state.answered = True
 
     # Eingabefeld
     user_input = st.text_input("Wie heisst diese Gemeinde?", key=f"input_{item['gemeinde']}", disabled=st.session_state.answered)
@@ -133,18 +132,18 @@ if st.session_state.current_item is not None:
                 if mode == "Quiz": st.session_state.quiz_stats['correct'] += 1
                 st.session_state.answered = True
             else:
-                st.session_state.attempts += 1
                 if mode == "Lernen":
+                    st.session_state.attempts += 1
                     if st.session_state.attempts < 3:
-                        st.warning(f"Falsch! Versuch {st.session_state.attempts}/3. Ein Tipp wurde oben eingeblendet.")
-                else: # Quizmodus: Sofort fertig
-                    st.error(f"Falsch! Die richtige Antwort ist: {item['gemeinde']}")
+                        st.warning(f"Falsch! Versuch {st.session_state.attempts}/3. Tipp folgt.")
+                else: # Quizmodus: Auflösung sofort bei falscher Antwort
+                    st.error(f"Falsch! Die richtige Antwort ist: **{item['gemeinde']}**")
                     st.session_state.quiz_stats['wrong'] += 1
                     st.session_state.quiz_stats['wrong_list'].append(item)
                     st.session_state.answered = True
             st.rerun()
     
-    # "Nächstes Wappen" erscheint nach Prüfung oder nach 3 Fehlversuchen
+    # Nächstes Wappen
     if st.session_state.answered:
         if st.button("Nächstes Wappen ➡️"):
             if mode == "Lernen":
@@ -170,4 +169,4 @@ elif mode == "Quiz" and st.session_state.quiz_stats['total'] > 0:
             next_question()
             st.rerun()
 else:
-    st.info("Willkommen! Wähle links einen Kanton und klicke auf 'Start', um loszulegen.")
+    st.info("Willkommen! Wähle links einen Kanton und klicke auf 'Start'.")
