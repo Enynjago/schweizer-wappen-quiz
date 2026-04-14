@@ -40,7 +40,10 @@ if "setup_done" not in st.session_state:
 # --- SIDEBAR ---
 st.sidebar.title("🇨🇭 Wappen-Trainer")
 if not df.empty:
-    st.sidebar.metric("Erfasste Gemeinden", f"{len(df)} / 2131")
+    anzahl_aktuell = len(df)
+    # Hier die korrigierte Zahl: 2121
+    st.sidebar.metric("Erfasste Gemeinden", f"{anzahl_aktuell} / 2121")
+    st.sidebar.progress(min(anzahl_aktuell / 2121, 1.0))
 
 st.sidebar.divider()
 mode = st.sidebar.radio("Modus wählen", ["Lernen (Anki + Tippen)", "Quiz (Strenge Prüfung)"])
@@ -108,7 +111,6 @@ if mode == "Lernen (Anki + Tippen)" and st.session_state.current_item:
         if c3.button("⭐ Ganz einfach"): next_question(k_wahl); st.rerun()
 
 elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
-    # --- FALL A: QUIZ LÄUFT NOCH ---
     if not st.session_state.quiz_finished and st.session_state.current_item:
         item = st.session_state.current_item
         name_richtig = str(item.get('gemeinde', ''))
@@ -147,12 +149,10 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
                 next_question()
                 st.rerun()
 
-    # --- FALL B: QUIZ IST FERTIG (ERGEBNISSE) ---
     else:
         st.balloons()
         st.header("Quiz abgeschlossen! 🎉")
         s = st.session_state.quiz_stats
-        
         c1, c2, c3 = st.columns(3)
         c1.metric("Gesamt", s['total'])
         c2.metric("Richtig", s['correct'])
@@ -160,12 +160,10 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         
         final_quote = (s['correct'] / s['total'] * 100) if s['total'] > 0 else 0
         st.write(f"### Erfolgsquote: **{final_quote:.1f}%**")
-        
         st.divider()
         st.subheader("Wiederholung")
         
         col_btn1, col_btn2 = st.columns(2)
-        
         with col_btn1:
             if st.button("🔄 Alles nochmals"):
                 st.session_state.quiz_queue = random.sample(st.session_state.last_pool, len(st.session_state.last_pool))
@@ -173,19 +171,14 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
                 st.session_state.quiz_finished = False
                 next_question()
                 st.rerun()
-        
         with col_btn2:
             if s['wrong_list']:
                 if st.button(f"🎯 Nur Fehler ({len(s['wrong_list'])})"):
-                    # WICHTIG: Wir kopieren die Fehlerliste in die Queue
                     st.session_state.quiz_queue = random.sample(s['wrong_list'], len(s['wrong_list']))
                     st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
                     st.session_state.quiz_finished = False
-                    st.session_state.quiz_active = True # Sicherstellen, dass Quiz aktiv bleibt
+                    st.session_state.quiz_active = True
                     next_question()
                     st.rerun()
-            else:
-                st.success("Keine Fehler vorhanden!")
-
 else:
     st.info("Bitte wähle eine Region und klicke auf 'Quiz starten'.")
