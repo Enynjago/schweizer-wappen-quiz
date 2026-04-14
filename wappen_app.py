@@ -31,7 +31,7 @@ if "setup_done" not in st.session_state:
         "q_feedback": None,
         "quiz_active": False,
         "quiz_finished": False,
-        "last_pool": [], # Speichert den letzten Pool für "Alles wiederholen"
+        "last_pool": [],
         "quiz_stats": {"correct": 0, "wrong": 0, "total": 0, "wrong_list": []},
         "quiz_queue": [],
         "setup_done": True
@@ -46,9 +46,9 @@ st.sidebar.divider()
 mode = st.sidebar.radio("Modus wählen", ["Lernen (Anki + Tippen)", "Quiz (Strenge Prüfung)"])
 
 def next_question(kanton_filter=None):
-    st.session_state.show_solution = False
     st.session_state.q_answered = False
     st.session_state.q_feedback = None
+    st.session_state.show_solution = False
     st.session_state.user_guess = ""
     
     if mode == "Lernen (Anki + Tippen)":
@@ -58,6 +58,7 @@ def next_question(kanton_filter=None):
     else:
         if st.session_state.quiz_queue:
             st.session_state.current_item = st.session_state.quiz_queue.pop(0)
+            st.session_state.quiz_finished = False
         else:
             st.session_state.current_item = None
             st.session_state.quiz_finished = True
@@ -107,7 +108,7 @@ if mode == "Lernen (Anki + Tippen)" and st.session_state.current_item:
         if c3.button("⭐ Ganz einfach"): next_question(k_wahl); st.rerun()
 
 elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
-    # --- QUIZ LÄUFT ---
+    # --- FALL A: QUIZ LÄUFT NOCH ---
     if not st.session_state.quiz_finished and st.session_state.current_item:
         item = st.session_state.current_item
         name_richtig = str(item.get('gemeinde', ''))
@@ -146,29 +147,27 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
                 next_question()
                 st.rerun()
 
-    # --- QUIZ ERGEBNIS ÜBERSICHT ---
-    elif st.session_state.quiz_finished:
+    # --- FALL B: QUIZ IST FERTIG (ERGEBNISSE) ---
+    else:
         st.balloons()
         st.header("Quiz abgeschlossen! 🎉")
         s = st.session_state.quiz_stats
         
-        # Große Statistik-Boxen
         c1, c2, c3 = st.columns(3)
         c1.metric("Gesamt", s['total'])
-        c2.metric("Richtig", s['correct'], delta=f"{s['correct']}", delta_color="normal")
-        c3.metric("Falsch", s['wrong'], delta=f"-{s['wrong']}", delta_color="inverse")
+        c2.metric("Richtig", s['correct'])
+        c3.metric("Falsch", s['wrong'])
         
         final_quote = (s['correct'] / s['total'] * 100) if s['total'] > 0 else 0
-        st.write(f"### Deine Erfolgsquote: **{final_quote:.1f}%**")
+        st.write(f"### Erfolgsquote: **{final_quote:.1f}%**")
         
         st.divider()
-        st.subheader("Wie möchtest du weitermachen?")
+        st.subheader("Wiederholung")
         
         col_btn1, col_btn2 = st.columns(2)
         
         with col_btn1:
-            if st.button("🔄 Alles wiederholen", use_container_width=True):
-                # Ganzen Pool neu mischen und starten
+            if st.button("🔄 Alles nochmals"):
                 st.session_state.quiz_queue = random.sample(st.session_state.last_pool, len(st.session_state.last_pool))
                 st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
                 st.session_state.quiz_finished = False
@@ -176,17 +175,17 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
                 st.rerun()
         
         with col_btn2:
-            falsche_anzahl = len(s['wrong_list'])
-            if falsche_anzahl > 0:
-                if st.button(f"🎯 Nur Fehler wiederholen ({falsche_anzahl})", use_container_width=True):
-                    # Nur die Fehlerliste als neue Queue nehmen
+            if s['wrong_list']:
+                if st.button(f"🎯 Nur Fehler ({len(s['wrong_list'])})"):
+                    # WICHTIG: Wir kopieren die Fehlerliste in die Queue
                     st.session_state.quiz_queue = random.sample(s['wrong_list'], len(s['wrong_list']))
                     st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
                     st.session_state.quiz_finished = False
+                    st.session_state.quiz_active = True # Sicherstellen, dass Quiz aktiv bleibt
                     next_question()
                     st.rerun()
             else:
-                st.success("Wahnsinn! Du hast alle Wappen richtig gewusst. Keine Fehler zum Wiederholen!")
+                st.success("Keine Fehler vorhanden!")
 
 else:
-    st.info("Wähle links eine Region und klicke auf 'Quiz starten' oder lerne im Anki-Modus.")
+    st.info("Bitte wähle eine Region und klicke auf 'Quiz starten'.")
