@@ -96,11 +96,9 @@ if mode == "Lernen (Anki + Tippen)" and st.session_state.current_item:
         st.image(item['bild_pfad'], width=300)
     
     if not st.session_state.show_solution:
-        # Auch im Lernmodus nutzen wir ein Formular für Enter-Support
         with st.form("learn_form", clear_on_submit=True):
             st.session_state.user_guess = st.text_input("Überlege kurz: Wie heißt diese Gemeinde?")
-            submit_learn = st.form_submit_button("Lösung aufdecken", use_container_width=True)
-            if submit_learn:
+            if st.form_submit_button("Lösung aufdecken (Enter)", use_container_width=True):
                 st.session_state.show_solution = True
                 st.rerun()
     else:
@@ -108,6 +106,7 @@ if mode == "Lernen (Anki + Tippen)" and st.session_state.current_item:
         if st.session_state.user_guess:
             st.write(f"Dein Tipp war: *{st.session_state.user_guess}*")
         c1, c2, c3 = st.columns(3)
+        # Kurzer Hinweis: Buttons in Columns reagieren leider nicht auf Enter
         if c1.button("❌ Nicht gewusst"): next_question(k_wahl); st.rerun()
         if c2.button("✅ Gewusst"): next_question(k_wahl); st.rerun()
         if c3.button("⭐ Ganz einfach"): next_question(k_wahl); st.rerun()
@@ -133,27 +132,27 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
             if "Korrekt" in st.session_state.q_feedback: st.success(st.session_state.q_feedback)
             else: st.error(st.session_state.q_feedback)
 
-        # FORMULAR FÜR ENTER-TASTE
+        # FORMULAR FÜR DOPPEL-ENTER-SUPPORT
         with st.form("quiz_form", clear_on_submit=True):
-            user_input = st.text_input("Name der Gemeinde:", disabled=st.session_state.q_answered)
-            btn_text = "Prüfen (Enter)" if not st.session_state.q_answered else "Ergebnis steht oben"
-            submit_quiz = st.form_submit_button(btn_text)
-            
-            if submit_quiz and not st.session_state.q_answered:
-                if user_input.lower().strip() == name_richtig.lower().strip():
-                    st.session_state.q_feedback = f"Korrekt! Das ist {name_richtig}."
-                    st.session_state.quiz_stats['correct'] += 1
-                else:
-                    st.session_state.q_feedback = f"Falsch! Die richtige Lösung ist: {name_richtig}"
-                    st.session_state.quiz_stats['wrong'] += 1
-                    st.session_state.quiz_stats['wrong_list'].append(item)
-                st.session_state.q_answered = True
-                st.rerun()
-
-        if st.session_state.q_answered:
-            if st.button("Nächstes Wappen ➡️"):
-                next_question()
-                st.rerun()
+            if not st.session_state.q_answered:
+                user_input = st.text_input("Name der Gemeinde:", key="q_input")
+                submit_quiz = st.form_submit_button("Prüfen (Enter)")
+                if submit_quiz:
+                    if user_input.lower().strip() == name_richtig.lower().strip():
+                        st.session_state.q_feedback = f"Korrekt! Das ist {name_richtig}."
+                        st.session_state.quiz_stats['correct'] += 1
+                    else:
+                        st.session_state.q_feedback = f"Falsch! Die richtige Lösung ist: {name_richtig}"
+                        st.session_state.quiz_stats['wrong'] += 1
+                        st.session_state.quiz_stats['wrong_list'].append(item)
+                    st.session_state.q_answered = True
+                    st.rerun()
+            else:
+                # Wenn schon geantwortet, wird der Button zum "Weiter"-Button
+                st.write("Drücke nochmals Enter für das nächste Wappen")
+                if st.form_submit_button("Nächstes Wappen ➡️ (Enter)"):
+                    next_question()
+                    st.rerun()
 
     else:
         st.balloons()
