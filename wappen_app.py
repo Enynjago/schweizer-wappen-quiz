@@ -41,7 +41,6 @@ if "setup_done" not in st.session_state:
 st.sidebar.title("🇨🇭 Wappen-Trainer")
 if not df.empty:
     anzahl_aktuell = len(df)
-    # Hier die korrigierte Zahl: 2121
     st.sidebar.metric("Erfasste Gemeinden", f"{anzahl_aktuell} / 2121")
     st.sidebar.progress(min(anzahl_aktuell / 2121, 1.0))
 
@@ -97,10 +96,13 @@ if mode == "Lernen (Anki + Tippen)" and st.session_state.current_item:
         st.image(item['bild_pfad'], width=300)
     
     if not st.session_state.show_solution:
-        st.session_state.user_guess = st.text_input("Überlege kurz: Wie heißt diese Gemeinde?", key="learn_input")
-        if st.button("Lösung aufdecken"):
-            st.session_state.show_solution = True
-            st.rerun()
+        # Auch im Lernmodus nutzen wir ein Formular für Enter-Support
+        with st.form("learn_form", clear_on_submit=True):
+            st.session_state.user_guess = st.text_input("Überlege kurz: Wie heißt diese Gemeinde?")
+            submit_learn = st.form_submit_button("Lösung aufdecken", use_container_width=True)
+            if submit_learn:
+                st.session_state.show_solution = True
+                st.rerun()
     else:
         st.markdown(f"### Lösung: **{name_richtig}**")
         if st.session_state.user_guess:
@@ -131,10 +133,13 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
             if "Korrekt" in st.session_state.q_feedback: st.success(st.session_state.q_feedback)
             else: st.error(st.session_state.q_feedback)
 
-        user_input = st.text_input("Name der Gemeinde:", key=f"q_in_{name_richtig}", disabled=st.session_state.q_answered)
-        
-        if not st.session_state.q_answered:
-            if st.button("Prüfen"):
+        # FORMULAR FÜR ENTER-TASTE
+        with st.form("quiz_form", clear_on_submit=True):
+            user_input = st.text_input("Name der Gemeinde:", disabled=st.session_state.q_answered)
+            btn_text = "Prüfen (Enter)" if not st.session_state.q_answered else "Ergebnis steht oben"
+            submit_quiz = st.form_submit_button(btn_text)
+            
+            if submit_quiz and not st.session_state.q_answered:
                 if user_input.lower().strip() == name_richtig.lower().strip():
                     st.session_state.q_feedback = f"Korrekt! Das ist {name_richtig}."
                     st.session_state.quiz_stats['correct'] += 1
@@ -144,7 +149,8 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
                     st.session_state.quiz_stats['wrong_list'].append(item)
                 st.session_state.q_answered = True
                 st.rerun()
-        else:
+
+        if st.session_state.q_answered:
             if st.button("Nächstes Wappen ➡️"):
                 next_question()
                 st.rerun()
@@ -157,7 +163,6 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         c1.metric("Gesamt", s['total'])
         c2.metric("Richtig", s['correct'])
         c3.metric("Falsch", s['wrong'])
-        
         final_quote = (s['correct'] / s['total'] * 100) if s['total'] > 0 else 0
         st.write(f"### Erfolgsquote: **{final_quote:.1f}%**")
         st.divider()
