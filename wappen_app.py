@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import random
 import os
-from thefuzz import fuzz
 
 # --- DATEN LADEN ---
 @st.cache_data
@@ -91,22 +90,19 @@ else:
 if mode == "Lernen (Anki + Tippen)" and st.session_state.current_item:
     item = st.session_state.current_item
     name_richtig = str(item.get('gemeinde', ''))
-    st.subheader("Lernmodus: Aktiv erinnern")
+    st.subheader("Lernmodus")
     if os.path.exists(str(item.get('bild_pfad', ''))):
         st.image(item['bild_pfad'], width=300)
     
     if not st.session_state.show_solution:
         with st.form("learn_form", clear_on_submit=True):
-            st.session_state.user_guess = st.text_input("Überlege kurz: Wie heißt diese Gemeinde?")
-            if st.form_submit_button("Lösung aufdecken (Enter)", use_container_width=True):
+            st.text_input("Name tippen...", key="l_in")
+            if st.form_submit_button("Lösung zeigen (Enter)"):
                 st.session_state.show_solution = True
                 st.rerun()
     else:
         st.markdown(f"### Lösung: **{name_richtig}**")
-        if st.session_state.user_guess:
-            st.write(f"Dein Tipp war: *{st.session_state.user_guess}*")
         c1, c2, c3 = st.columns(3)
-        # Kurzer Hinweis: Buttons in Columns reagieren leider nicht auf Enter
         if c1.button("❌ Nicht gewusst"): next_question(k_wahl); st.rerun()
         if c2.button("✅ Gewusst"): next_question(k_wahl); st.rerun()
         if c3.button("⭐ Ganz einfach"): next_question(k_wahl); st.rerun()
@@ -116,73 +112,58 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         item = st.session_state.current_item
         name_richtig = str(item.get('gemeinde', ''))
         s = st.session_state.quiz_stats
-        beantw = s['correct'] + s['wrong']
         
-        st.subheader(f"Frage {beantw + 1} von {s['total']}")
-        cols = st.columns(3)
-        cols[0].metric("Richtig", s['correct'])
-        cols[1].metric("Falsch", s['wrong'])
-        quote = (s['correct'] / beantw * 100) if beantw > 0 else 0
-        cols[2].metric("Quote", f"{quote:.1f}%")
-
+        st.subheader(f"Frage {s['correct'] + s['wrong'] + 1} von {s['total']}")
+        
+        # Wappen
         if os.path.exists(str(item.get('bild_pfad', ''))):
             st.image(item['bild_pfad'], width=300)
 
+        # Feedback
         if st.session_state.q_feedback:
             if "Korrekt" in st.session_state.q_feedback: st.success(st.session_state.q_feedback)
             else: st.error(st.session_state.q_feedback)
 
-        # FORMULAR FÜR DOPPEL-ENTER-SUPPORT
+        # Das "Ein-Feld-System" für Doppel-Enter
         with st.form("quiz_form", clear_on_submit=True):
             if not st.session_state.q_answered:
-                user_input = st.text_input("Name der Gemeinde:", key="q_input")
-                submit_quiz = st.form_submit_button("Prüfen (Enter)")
-                if submit_quiz:
-                    if user_input.lower().strip() == name_richtig.lower().strip():
+                u_input = st.text_input("Name der Gemeinde:", key="active_q")
+                if st.form_submit_button("Prüfen (Enter)"):
+                    if u_input.lower().strip() == name_richtig.lower().strip():
                         st.session_state.q_feedback = f"Korrekt! Das ist {name_richtig}."
                         st.session_state.quiz_stats['correct'] += 1
                     else:
-                        st.session_state.q_feedback = f"Falsch! Die richtige Lösung ist: {name_richtig}"
+                        st.session_state.q_feedback = f"Falsch! Lösung: {name_richtig}"
                         st.session_state.quiz_stats['wrong'] += 1
                         st.session_state.quiz_stats['wrong_list'].append(item)
                     st.session_state.q_answered = True
                     st.rerun()
             else:
-                # Wenn schon geantwortet, wird der Button zum "Weiter"-Button
-                st.write("Drücke nochmals Enter für das nächste Wappen")
-                if st.form_submit_button("Nächstes Wappen ➡️ (Enter)"):
+                # Das Feld ist jetzt quasi der "Weiter-Knopf"
+                st.text_input("Lösung steht oben.", value="Drücke Enter für weiter...", disabled=True)
+                if st.form_submit_button("Nächstes Wappen ➡️"):
                     next_question()
                     st.rerun()
 
     else:
+        # Ergebnis-Bildschirm
         st.balloons()
-        st.header("Quiz abgeschlossen! 🎉")
+        st.header("Quiz abgeschlossen!")
         s = st.session_state.quiz_stats
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Gesamt", s['total'])
-        c2.metric("Richtig", s['correct'])
-        c3.metric("Falsch", s['wrong'])
-        final_quote = (s['correct'] / s['total'] * 100) if s['total'] > 0 else 0
-        st.write(f"### Erfolgsquote: **{final_quote:.1f}%**")
-        st.divider()
-        st.subheader("Wiederholung")
+        st.write(f"Richtig: {s['correct']} | Falsch: {s['wrong']}")
         
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button("🔄 Alles nochmals"):
-                st.session_state.quiz_queue = random.sample(st.session_state.last_pool, len(st.session_state.last_pool))
-                st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
-                st.session_state.quiz_finished = False
-                next_question()
-                st.rerun()
-        with col_btn2:
-            if s['wrong_list']:
-                if st.button(f"🎯 Nur Fehler ({len(s['wrong_list'])})"):
-                    st.session_state.quiz_queue = random.sample(s['wrong_list'], len(s['wrong_list']))
-                    st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
-                    st.session_state.quiz_finished = False
-                    st.session_state.quiz_active = True
-                    next_question()
-                    st.rerun()
+        if st.button("🔄 Alles wiederholen"):
+            st.session_state.quiz_queue = random.sample(st.session_state.last_pool, len(st.session_state.last_pool))
+            st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
+            st.session_state.quiz_finished = False
+            next_question()
+            st.rerun()
+        
+        if s['wrong_list'] and st.button(f"🎯 Nur Fehler ({len(s['wrong_list'])})"):
+            st.session_state.quiz_queue = random.sample(s['wrong_list'], len(s['wrong_list']))
+            st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
+            st.session_state.quiz_finished = False
+            next_question()
+            st.rerun()
 else:
-    st.info("Bitte wähle eine Region und klicke auf 'Quiz starten'.")
+    st.info("Wähle links eine Region und klicke auf 'Quiz starten'.")
