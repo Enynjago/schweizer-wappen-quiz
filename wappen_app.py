@@ -21,96 +21,107 @@ def load_data():
 df = load_data()
 
 # --- INITIALISIERUNG ---
-if "setup_done" not in st.session_state:
+if "quiz_stats" not in st.session_state:
     st.session_state.update({
         "current_item": None,
         "q_answered": False,
         "q_feedback": None,
         "quiz_active": False,
         "quiz_finished": False,
-        "last_pool": [],
-        "quiz_stats": {"correct": 0, "wrong": 0, "total": 0, "wrong_list": []},
         "quiz_queue": [],
-        "setup_done": True
+        "last_pool": [],
+        "quiz_stats": {"correct": 0, "wrong": 0, "total": 0, "wrong_list": []}
     })
 
-# --- HILFSFUNKTIONEN ---
 def next_question():
     if st.session_state.quiz_queue:
         st.session_state.current_item = st.session_state.quiz_queue.pop(0)
         st.session_state.q_answered = False
         st.session_state.q_feedback = None
-        st.session_state.quiz_finished = False
     else:
-        st.session_state.current_item = None
         st.session_state.quiz_finished = True
 
 # --- SIDEBAR ---
 st.sidebar.title("🇨🇭 Wappen-Trainer")
-mode = st.sidebar.radio("Modus", ["Lernen", "Quiz"])
+mode = st.sidebar.radio("Modus", ["Quiz", "Lernen"])
 
 if mode == "Quiz":
-    kantone_q = ["Alle"] + sorted(df['kanton'].unique().tolist()) if not df.empty else []
-    q_reg = st.sidebar.selectbox("Region wählen", kantone_q)
+    kantone = ["Alle"] + sorted(df['kanton'].unique().tolist()) if not df.empty else []
+    wahl = st.sidebar.selectbox("Region", kantone)
     if st.sidebar.button("Quiz starten"):
-        pool = df if q_reg == "Alle" else df[df['kanton'] == q_reg]
+        pool = df if wahl == "Alle" else df[df['kanton'] == wahl]
         if not pool.empty:
             st.session_state.last_pool = pool.to_dict('records')
             st.session_state.quiz_queue = pool.sample(frac=1).to_dict('records')
             st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
             st.session_state.quiz_active = True
+            st.session_state.quiz_finished = False
             next_question()
             st.rerun()
 
-# --- HAUPTBEREICH QUIZ ---
+# --- QUIZ MODUS ---
 if mode == "Quiz" and st.session_state.quiz_active:
     if not st.session_state.quiz_finished and st.session_state.current_item:
         item = st.session_state.current_item
         name_richtig = str(item.get('gemeinde', ''))
         s = st.session_state.quiz_stats
         
-        st.subheader(f"Wappen {s['correct'] + s['wrong'] + 1} von {s['total']}")
+        st.subheader(f"Frage {s['correct'] + s['wrong'] + 1} von {s['total']}")
         
         if os.path.exists(str(item.get('bild_pfad', ''))):
             st.image(item['bild_pfad'], width=300)
 
-        # Feedback-Bereich
+        # Feedback Anzeige (vor dem Formular, damit es nicht springt)
         if st.session_state.q_feedback:
-            if "Korrekt" in st.session_state.q_feedback:
-                st.success(st.session_state.q_feedback)
-            else:
-                st.error(st.session_state.q_feedback)
-            st.info("Drücke ENTER für das nächste Wappen")
+            if "Korrekt" in st.session_state.q_feedback: st.success(st.session_state.q_feedback)
+            else: st.error(st.session_state.q_feedback)
 
-        # DAS FORMULAR (Der Kern des Enter-Problems)
-        with st.form(key="quiz_form", clear_on_submit=True):
-            user_in = st.text_input("Name der Gemeinde:", key="input_field")
-            submit = st.form_submit_button("Senden")
+        # Das "Universal-Formular"
+        # clear_on_submit sorgt dafür, dass das Feld nach Enter leer wird
+        with st.form(key="action_form", clear_on_submit=True):
+            user_in = st.text_input("Name eingeben & Enter:", key="input_text")
             
-            if submit:
-                # Logik: Wenn schon geantwortet wurde -> nächstes Wappen
-                if st.session_state.q_answered:
-                    next_question()
-                    st.rerun()
-                # Logik: Wenn noch nicht geantwortet wurde -> prüfen
-                elif user_in.strip():
+            # Ein einziger Button, der die Aktion steuert
+            if not st.session_state.q_answered:
+                button_label = "Prüfen"
+            else:
+                button_label = "WEITER (Enter drücken)"
+                
+            submitted = st.form_submit_button(button_label, use_container_width=True)
+
+            if submitted:
+                if not st.session_state.q_answered:
+                    # Logik: Prüfen
                     if user_in.lower().strip() == name_richtig.lower().strip():
-                        st.session_state.q_feedback = f"Korrekt! Das ist {name_richtig}."
+                        st.session_state.q_feedback = f"Richtig! Es ist {name_richtig}."
                         st.session_state.quiz_stats['correct'] += 1
                     else:
-                        st.session_state.q_feedback = f"Falsch! Lösung: {name_richtig}"
+                        st.session_state.q_feedback = f"Falsch! Es ist {name_richtig}."
                         st.session_state.quiz_stats['wrong'] += 1
                         st.session_state.quiz_stats['wrong_list'].append(item)
                     st.session_state.q_answered = True
                     st.rerun()
+                else:
+                    # Logik: Weiter
+                    next_question()
+                    st.rerun()
 
     elif st.session_state.quiz_finished:
-        st.header("Quiz beendet!")
+        st.balloons()
+        st.header("Ergebnis")
         s = st.session_state.quiz_stats
-        st.write(f"Ergebnis: {s['correct']} von {s['total']} richtig.")
-        if st.button("Nochmal"):
+        st.write(f"Du hast {s['correct']} von {s['total']} Wappen erkannt.")
+        
+        if st.button("Neues Quiz"):
             st.session_state.quiz_active = False
+            st.rerun()
+            
+        if s['wrong_list'] and st.button("Nur Fehler wiederholen"):
+            st.session_state.quiz_queue = random.sample(s['wrong_list'], len(s['wrong_list']))
+            st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
+            st.session_state.quiz_finished = False
+            next_question()
             st.rerun()
 
 else:
-    st.write("Wähle links eine Region und klicke auf 'Quiz starten'.")
+    st.info("Klicke links auf 'Quiz starten'.")
