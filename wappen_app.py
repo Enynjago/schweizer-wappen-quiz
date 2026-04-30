@@ -180,7 +180,8 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
             st.rerun()
             
         if s['wrong_list']:
-            if col_b.button(f"🎯 Nur Fehler wiederholen ({len(s['wrong_list'])})", color="primary", use_container_width=True):
+            # Hier lag der Fehler: color="primary" wurde entfernt
+            if col_b.button(f"🎯 Nur Fehler wiederholen ({len(s['wrong_list'])})", use_container_width=True):
                 st.session_state.quiz_queue = random.sample(s['wrong_list'], len(s['wrong_list']))
                 st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
                 next_question()
