@@ -78,17 +78,16 @@ def check_answer():
         st.session_state.quiz_input = ""
         next_question()
 
-# --- SIDEBAR MIT PROGRESS ---
+# --- SIDEBAR MIT SAMMLUNGS-PROGRESS ---
 st.sidebar.title("🇨🇭 Wappen-Trainer")
 
-# Fortschrittsberechnung
 GESAMT_ZIEL = 2110
 aktuell_anzahl = len(df) if not df.empty else 0
-fortschritt_prozent = min(aktuell_anzahl / GESAMT_ZIEL, 1.0)
+sammlung_prozent = min(aktuell_anzahl / GESAMT_ZIEL, 1.0)
 
 st.sidebar.metric("Gesammelte Wappen", f"{aktuell_anzahl} / {GESAMT_ZIEL}")
-st.sidebar.progress(fortschritt_prozent)
-st.sidebar.write(f"Sammlung zu **{fortschritt_prozent*100:.1f}%** komplett")
+st.sidebar.progress(sammlung_prozent)
+st.sidebar.write(f"Sammlung zu **{sammlung_prozent*100:.1f}%** komplett")
 
 st.sidebar.divider()
 mode = st.sidebar.radio("Modus wählen", ["Lernen (Anki + Tippen)", "Quiz (Strenge Prüfung)"])
@@ -156,12 +155,19 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         item = st.session_state.current_item
         s = st.session_state.quiz_stats
         
-        aktuell = s['correct'] + s['wrong'] + 1
+        # Statistik & Quiz-Fortschritt
+        beantwortet = s['correct'] + s['wrong']
+        aktuell = beantwortet + 1
         st.subheader(f"Wappen {aktuell} von {s['total']}")
+        
+        # Fortschrittsbalken im Quiz
+        quiz_fortschritt = beantwortet / s['total']
+        st.progress(quiz_fortschritt)
+        
         m1, m2, m3 = st.columns(3)
         m1.metric("Richtig", s['correct'])
         m2.metric("Falsch", s['wrong'])
-        quote = (s['correct'] / (s['correct'] + s['wrong']) * 100) if (s['correct'] + s['wrong']) > 0 else 0
+        quote = (s['correct'] / beantwortet * 100) if beantwortet > 0 else 0
         m3.metric("Quote", f"{quote:.1f}%")
         
         if st.session_state.last_feedback:
@@ -177,7 +183,6 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
             key="quiz_input", 
             on_change=check_answer
         )
-        st.caption("Fokus liegt auf dem Feld: Tippen, Enter, nächstes Wappen.")
 
     elif st.session_state.quiz_finished:
         st.balloons()
