@@ -59,9 +59,7 @@ def render_image(path_str):
     else:
         st.error(f"Datei nicht gefunden: {chosen}")
 
-# --- QUIZ-LOGIK FUNKTION (LÖSCHT DAS FELD NACH ENTER) ---
 def check_answer():
-    # Wert aus dem Feld holen
     user_val = st.session_state.quiz_input.strip()
     item = st.session_state.current_item
     
@@ -77,15 +75,20 @@ def check_answer():
             st.session_state.last_feedback = f"❌ Falsch! Richtig war: {correct_name}"
             st.toast(f"Leider falsch...", icon="❌")
         
-        # DAS GEHEIMNIS: Feld im Session State leeren
         st.session_state.quiz_input = ""
-        # Zum nächsten Wappen springen
         next_question()
 
-# --- SIDEBAR ---
+# --- SIDEBAR MIT PROGRESS ---
 st.sidebar.title("🇨🇭 Wappen-Trainer")
-if not df.empty:
-    st.sidebar.metric("Erfasste Gemeinden", f"{len(df)} / 2121")
+
+# Fortschrittsberechnung
+GESAMT_ZIEL = 2110
+aktuell_anzahl = len(df) if not df.empty else 0
+fortschritt_prozent = min(aktuell_anzahl / GESAMT_ZIEL, 1.0)
+
+st.sidebar.metric("Gesammelte Wappen", f"{aktuell_anzahl} / {GESAMT_ZIEL}")
+st.sidebar.progress(fortschritt_prozent)
+st.sidebar.write(f"Sammlung zu **{fortschritt_prozent*100:.1f}%** komplett")
 
 st.sidebar.divider()
 mode = st.sidebar.radio("Modus wählen", ["Lernen (Anki + Tippen)", "Quiz (Strenge Prüfung)"])
@@ -111,39 +114,42 @@ if mode == "Quiz (Strenge Prüfung)":
 if mode == "Lernen (Anki + Tippen)":
     st.session_state.quiz_active = False
     kantone = sorted(df['kanton'].unique()) if not df.empty else []
-    k_wahl = st.sidebar.selectbox("Kanton wählen", kantone, key="learn_kanton")
-    
-    if st.session_state.current_item is None or st.session_state.get('last_mode') != "Lernen":
-        st.session_state.last_mode = "Lernen"
-        pool = df[df['kanton'] == k_wahl] if not df.empty else pd.DataFrame()
-        if not pool.empty:
-            st.session_state.current_item = pool.sample(1).iloc[0].to_dict()
-
-    if st.session_state.current_item:
-        item = st.session_state.current_item
-        st.subheader("Lernmodus")
-        render_image(item.get('bild_pfad', ''))
+    if not kantone:
+        st.info("Bitte füge zuerst Daten in deine CSV ein.")
+    else:
+        k_wahl = st.sidebar.selectbox("Kanton wählen", kantone, key="learn_kanton")
         
-        if not st.session_state.show_solution:
-            st.text_input("Wie heißt diese Gemeinde?", key="l_in")
-            if st.button("Lösung aufdecken"):
-                st.session_state.show_solution = True
-                st.rerun()
-        else:
-            st.markdown(f"### Lösung: **{item['gemeinde']}**")
-            c1, c2, c3 = st.columns(3)
-            if c1.button("❌ Nicht gewusst"):
-                st.session_state.current_item = df[df['kanton'] == k_wahl].sample(1).iloc[0].to_dict()
-                st.session_state.show_solution = False
-                st.rerun()
-            if c2.button("✅ Gewusst"):
-                st.session_state.current_item = df[df['kanton'] == k_wahl].sample(1).iloc[0].to_dict()
-                st.session_state.show_solution = False
-                st.rerun()
-            if c3.button("⭐ Ganz einfach"):
-                st.session_state.current_item = df[df['kanton'] == k_wahl].sample(1).iloc[0].to_dict()
-                st.session_state.show_solution = False
-                st.rerun()
+        if st.session_state.current_item is None or st.session_state.get('last_mode') != "Lernen":
+            st.session_state.last_mode = "Lernen"
+            pool = df[df['kanton'] == k_wahl] if not df.empty else pd.DataFrame()
+            if not pool.empty:
+                st.session_state.current_item = pool.sample(1).iloc[0].to_dict()
+
+        if st.session_state.current_item:
+            item = st.session_state.current_item
+            st.subheader("Lernmodus")
+            render_image(item.get('bild_pfad', ''))
+            
+            if not st.session_state.show_solution:
+                st.text_input("Wie heißt diese Gemeinde?", key="l_in")
+                if st.button("Lösung aufdecken"):
+                    st.session_state.show_solution = True
+                    st.rerun()
+            else:
+                st.markdown(f"### Lösung: **{item['gemeinde']}**")
+                c1, c2, c3 = st.columns(3)
+                if c1.button("❌ Nicht gewusst"):
+                    st.session_state.current_item = df[df['kanton'] == k_wahl].sample(1).iloc[0].to_dict()
+                    st.session_state.show_solution = False
+                    st.rerun()
+                if c2.button("✅ Gewusst"):
+                    st.session_state.current_item = df[df['kanton'] == k_wahl].sample(1).iloc[0].to_dict()
+                    st.session_state.show_solution = False
+                    st.rerun()
+                if c3.button("⭐ Ganz einfach"):
+                    st.session_state.current_item = df[df['kanton'] == k_wahl].sample(1).iloc[0].to_dict()
+                    st.session_state.show_solution = False
+                    st.rerun()
 
 elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
     if not st.session_state.quiz_finished and st.session_state.current_item:
@@ -166,7 +172,6 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
 
         render_image(item.get('bild_pfad', ''))
 
-        # Textfeld: Löscht sich jetzt selbst durch die check_answer Funktion
         st.text_input(
             "Gemeindename eingeben & ENTER:", 
             key="quiz_input", 
