@@ -27,7 +27,7 @@ if "setup_done" not in st.session_state:
         "show_solution": False,
         "user_guess": "",
         "q_answered": False,
-        "last_result": None,
+        "last_feedback": "", # Speichert das letzte Ergebnis für die Anzeige
         "quiz_active": False,
         "quiz_finished": False,
         "last_pool": [],
@@ -41,7 +41,6 @@ def next_question():
     st.session_state.show_solution = False
     st.session_state.q_answered = False
     st.session_state.user_guess = ""
-    st.session_state.last_result = None
     if st.session_state.quiz_queue:
         st.session_state.current_item = st.session_state.quiz_queue.pop(0)
         st.session_state.quiz_finished = False
@@ -59,6 +58,26 @@ def render_image(path_str):
         st.image(chosen, width=300)
     else:
         st.error(f"Datei nicht gefunden: {chosen}")
+
+# --- QUIZ-LOGIK FUNKTION (FÜR ENTER-TASTE) ---
+def check_answer():
+    user_val = st.session_state.quiz_input.strip()
+    item = st.session_state.current_item
+    
+    if user_val and item:
+        correct_name = item['gemeinde'].strip()
+        if user_val.lower() == correct_name.lower():
+            st.session_state.quiz_stats['correct'] += 1
+            st.session_state.last_feedback = f"✅ Richtig: {correct_name}"
+            st.toast(f"Korrekt! 🎉", icon="✅")
+        else:
+            st.session_state.quiz_stats['wrong'] += 1
+            st.session_state.quiz_stats['wrong_list'].append(item)
+            st.session_state.last_feedback = f"❌ Falsch! Richtig war: {correct_name}"
+            st.toast(f"Leider falsch...", icon="❌")
+        
+        # Sofort zum nächsten Wappen springen
+        next_question()
 
 # --- SIDEBAR ---
 st.sidebar.title("🇨🇭 Wappen-Trainer")
@@ -79,6 +98,7 @@ if mode == "Quiz (Strenge Prüfung)":
             st.session_state.last_pool = pool
             st.session_state.quiz_queue = random.sample(pool, len(pool))
             st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(pool), "wrong_list": []}
+            st.session_state.last_feedback = ""
             st.session_state.quiz_active = True
             st.session_state.quiz_finished = False
             next_question()
@@ -102,7 +122,7 @@ if mode == "Lernen (Anki + Tippen)":
         render_image(item.get('bild_pfad', ''))
         
         if not st.session_state.show_solution:
-            user_guess = st.text_input("Wie heißt diese Gemeinde?", key="l_in")
+            st.text_input("Wie heißt diese Gemeinde?", key="l_in")
             if st.button("Lösung aufdecken"):
                 st.session_state.show_solution = True
                 st.rerun()
@@ -127,42 +147,31 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         item = st.session_state.current_item
         s = st.session_state.quiz_stats
         
-        # --- STATISTIK ANZEIGE ---
+        # Statistik
         aktuell = s['correct'] + s['wrong'] + 1
-        st.subheader(f"Frage {aktuell} von {s['total']}")
-        
+        st.subheader(f"Wappen {aktuell} von {s['total']}")
         m1, m2, m3 = st.columns(3)
         m1.metric("Richtig", s['correct'])
         m2.metric("Falsch", s['wrong'])
         quote = (s['correct'] / (s['correct'] + s['wrong']) * 100) if (s['correct'] + s['wrong']) > 0 else 0
         m3.metric("Quote", f"{quote:.1f}%")
         
+        # Anzeige des letzten Ergebnisses (hilfreich beim schnellen Tippen)
+        if st.session_state.last_feedback:
+            if "✅" in st.session_state.last_feedback:
+                st.success(st.session_state.last_feedback)
+            else:
+                st.error(st.session_state.last_feedback)
+
         render_image(item.get('bild_pfad', ''))
 
-        # Feedback
-        if st.session_state.q_answered:
-            if st.session_state.last_result == "correct":
-                st.success(f"Korrekt! Das ist {item['gemeinde']}.")
-            else:
-                st.error(f"Falsch! Die richtige Lösung ist: {item['gemeinde']}")
-
-        user_input = st.text_input("Gemeindename:", key=f"q_{item['gemeinde']}", disabled=st.session_state.q_answered)
-        
-        if not st.session_state.q_answered:
-            if st.button("Prüfen"):
-                if user_input.lower().strip() == item['gemeinde'].lower().strip():
-                    st.session_state.last_result = "correct"
-                    st.session_state.quiz_stats['correct'] += 1
-                else:
-                    st.session_state.last_result = "wrong"
-                    st.session_state.quiz_stats['wrong'] += 1
-                    st.session_state.quiz_stats['wrong_list'].append(item)
-                st.session_state.q_answered = True
-                st.rerun()
-        else:
-            if st.button("Nächstes Wappen ➡️"):
-                next_question()
-                st.rerun()
+        # DAS TEXTFELD: Reagiert sofort auf ENTER durch 'on_change'
+        st.text_input(
+            "Gemeindename eingeben & ENTER:", 
+            key="quiz_input", 
+            on_change=check_answer
+        )
+        st.caption("Einfach tippen und Enter drücken – die App springt automatisch weiter.")
 
     elif st.session_state.quiz_finished:
         st.balloons()
@@ -176,14 +185,15 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         if col_a.button("🔄 Alles wiederholen", use_container_width=True):
             st.session_state.quiz_queue = random.sample(st.session_state.last_pool, len(st.session_state.last_pool))
             st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
+            st.session_state.last_feedback = ""
             next_question()
             st.rerun()
             
         if s['wrong_list']:
-            # Hier lag der Fehler: color="primary" wurde entfernt
             if col_b.button(f"🎯 Nur Fehler wiederholen ({len(s['wrong_list'])})", use_container_width=True):
                 st.session_state.quiz_queue = random.sample(s['wrong_list'], len(s['wrong_list']))
                 st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
+                st.session_state.last_feedback = ""
                 next_question()
                 st.rerun()
 else:
