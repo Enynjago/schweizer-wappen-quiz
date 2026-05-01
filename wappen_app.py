@@ -27,7 +27,7 @@ if "setup_done" not in st.session_state:
         "show_solution": False,
         "user_guess": "",
         "q_answered": False,
-        "last_feedback": "", # Speichert das letzte Ergebnis für die Anzeige
+        "last_feedback": "", 
         "quiz_active": False,
         "quiz_finished": False,
         "last_pool": [],
@@ -59,8 +59,9 @@ def render_image(path_str):
     else:
         st.error(f"Datei nicht gefunden: {chosen}")
 
-# --- QUIZ-LOGIK FUNKTION (FÜR ENTER-TASTE) ---
+# --- QUIZ-LOGIK FUNKTION (LÖSCHT DAS FELD NACH ENTER) ---
 def check_answer():
+    # Wert aus dem Feld holen
     user_val = st.session_state.quiz_input.strip()
     item = st.session_state.current_item
     
@@ -76,7 +77,9 @@ def check_answer():
             st.session_state.last_feedback = f"❌ Falsch! Richtig war: {correct_name}"
             st.toast(f"Leider falsch...", icon="❌")
         
-        # Sofort zum nächsten Wappen springen
+        # DAS GEHEIMNIS: Feld im Session State leeren
+        st.session_state.quiz_input = ""
+        # Zum nächsten Wappen springen
         next_question()
 
 # --- SIDEBAR ---
@@ -147,7 +150,6 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         item = st.session_state.current_item
         s = st.session_state.quiz_stats
         
-        # Statistik
         aktuell = s['correct'] + s['wrong'] + 1
         st.subheader(f"Wappen {aktuell} von {s['total']}")
         m1, m2, m3 = st.columns(3)
@@ -156,7 +158,6 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         quote = (s['correct'] / (s['correct'] + s['wrong']) * 100) if (s['correct'] + s['wrong']) > 0 else 0
         m3.metric("Quote", f"{quote:.1f}%")
         
-        # Anzeige des letzten Ergebnisses (hilfreich beim schnellen Tippen)
         if st.session_state.last_feedback:
             if "✅" in st.session_state.last_feedback:
                 st.success(st.session_state.last_feedback)
@@ -165,13 +166,13 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
 
         render_image(item.get('bild_pfad', ''))
 
-        # DAS TEXTFELD: Reagiert sofort auf ENTER durch 'on_change'
+        # Textfeld: Löscht sich jetzt selbst durch die check_answer Funktion
         st.text_input(
             "Gemeindename eingeben & ENTER:", 
             key="quiz_input", 
             on_change=check_answer
         )
-        st.caption("Einfach tippen und Enter drücken – die App springt automatisch weiter.")
+        st.caption("Fokus liegt auf dem Feld: Tippen, Enter, nächstes Wappen.")
 
     elif st.session_state.quiz_finished:
         st.balloons()
