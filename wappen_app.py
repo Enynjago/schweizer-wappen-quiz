@@ -96,13 +96,26 @@ if mode == "Quiz (Strenge Prüfung)":
     kantone_liste = sorted(df['kanton'].unique().tolist()) if not df.empty else []
     ausgewaehlte_kantone = st.sidebar.multiselect("Kantone wählen (leer = alle):", options=kantone_liste)
     
+    # Filterung des Pools für die Slider-Berechnung
+    pool_df = df[df['kanton'].isin(ausgewaehlte_kantone)] if ausgewaehlte_kantone else df
+    max_available = len(pool_df) if not pool_df.empty else 0
+    
+    quiz_limit = st.sidebar.slider(
+        "Anzahl Wappen im Quiz:", 
+        min_value=min(5, max_available), 
+        max_value=max_available, 
+        value=min(50, max_available) if max_available > 0 else 0,
+        step=5
+    )
+    
     if st.sidebar.button("Quiz starten"):
-        pool_df = df[df['kanton'].isin(ausgewaehlte_kantone)] if ausgewaehlte_kantone else df
         if not pool_df.empty:
             pool = pool_df.to_dict('records')
             st.session_state.last_pool = pool
-            st.session_state.quiz_queue = random.sample(pool, len(pool))
-            st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(pool), "wrong_list": []}
+            # Hier wird die Begrenzung angewendet
+            selected_sample = random.sample(pool, min(quiz_limit, len(pool)))
+            st.session_state.quiz_queue = selected_sample
+            st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(selected_sample), "wrong_list": []}
             st.session_state.last_feedback = ""
             st.session_state.quiz_active = True
             st.session_state.quiz_finished = False
@@ -155,12 +168,10 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         item = st.session_state.current_item
         s = st.session_state.quiz_stats
         
-        # Statistik & Quiz-Fortschritt
         beantwortet = s['correct'] + s['wrong']
         aktuell = beantwortet + 1
         st.subheader(f"Wappen {aktuell} von {s['total']}")
         
-        # Fortschrittsbalken im Quiz
         quiz_fortschritt = beantwortet / s['total']
         st.progress(quiz_fortschritt)
         
@@ -194,8 +205,9 @@ elif mode == "Quiz (Strenge Prüfung)" and st.session_state.quiz_active:
         col_a, col_b = st.columns(2)
         
         if col_a.button("🔄 Alles wiederholen", use_container_width=True):
-            st.session_state.quiz_queue = random.sample(st.session_state.last_pool, len(st.session_state.last_pool))
-            st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": len(st.session_state.quiz_queue), "wrong_list": []}
+            # Wir wiederholen hier genau die begrenzte Anzahl von vorhin
+            st.session_state.quiz_queue = random.sample(st.session_state.last_pool, s['total'])
+            st.session_state.quiz_stats = {"correct": 0, "wrong": 0, "total": s['total'], "wrong_list": []}
             st.session_state.last_feedback = ""
             next_question()
             st.rerun()
